@@ -102,6 +102,11 @@ architecture RTL of RCAP is
   signal got_reply        : std_logic_vector(kNumReplyPath-1 downto 0);
 
   -- Debug --
+  attribute mark_debug  of offset_is_received   : signal is enDebug;
+  attribute mark_debug  of reg_round_trip_time  : signal is enDebug;
+  attribute mark_debug  of reg_hbc_offset       : signal is enDebug;
+  attribute mark_debug  of reg_valid_offset     : signal is enDebug;
+  attribute mark_debug  of is_done              : signal is enDebug;
 
 
 begin

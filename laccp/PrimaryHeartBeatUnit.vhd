@@ -67,6 +67,11 @@ architecture RTL of PrimaryHeartBeatUnit is
   signal reg_frame_tx   : LaccpFrameBobyType;
 
   -- Debug --
+  attribute mark_debug of heartbeat_signal  : signal is enDebug;
+  attribute mark_debug of backbeat_signal   : signal is enDebug;
+  attribute mark_debug of hb_counter        : signal is enDebug;
+  attribute mark_debug of local_hbf_number  : signal is enDebug;
+  attribute mark_debug of frame_state       : signal is enDebug;
 
 
 begin

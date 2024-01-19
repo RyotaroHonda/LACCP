@@ -169,7 +169,7 @@ begin
   u_RLIGP : entity mylib.RLIGP
     generic map
       (
-        enDebug         => false
+        enDebug         => enDebug
       )
     port map
       (
@@ -198,7 +198,7 @@ begin
       (
         kWidthOffset    => kWidthHbCount,
         kPrimaryMode    => kPrimaryMode,
-        enDebug         => false
+        enDebug         => enDebug
       )
     port map
       (
