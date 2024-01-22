@@ -82,6 +82,18 @@ architecture RTL of HeartBeatUnit is
   signal state_rx       : RxProcessType;
 
   -- Debug --
+  attribute mark_debug of hbc_is_synced         : signal is enDebug;
+  attribute mark_debug of ghbf_is_valid         : signal is enDebug;
+  attribute mark_debug of hbf_is_synced         : signal is enDebug;
+  attribute mark_debug of comp_hbfnum           : signal is enDebug;
+  attribute mark_debug of reg_hbfnum_mismatch   : signal is enDebug;
+  attribute mark_debug of heartbeat_signal      : signal is enDebug;
+  attribute mark_debug of backbeat_signal       : signal is enDebug;
+  attribute mark_debug of hb_counter            : signal is enDebug;
+  attribute mark_debug of local_hbf_number      : signal is enDebug;
+  attribute mark_debug of global_hbf_number     : signal is enDebug;
+  attribute mark_debug of frame_state           : signal is enDebug;
+  attribute mark_debug of global_frame_state    : signal is enDebug;
 
 
 begin
