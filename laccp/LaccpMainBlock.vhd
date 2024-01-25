@@ -355,7 +355,7 @@ begin
     generic map
       (
         kNumInterconnect  => kNumInterconnect,
-        enDebug           => enDebug
+        enDebug           => false
       )
     port map
       (

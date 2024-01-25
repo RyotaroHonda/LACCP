@@ -110,7 +110,7 @@ begin
       when WaitPreamble =>
         frame_valid           <= '0';
         frame_invalid         <= '0';
-        invalid_frame_length  <= '1';
+        invalid_frame_length  <= '0';
 
         if(valid_rx = '1') then
           if(data_rx = kFramePreamble) then
