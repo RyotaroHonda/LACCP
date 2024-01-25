@@ -178,7 +178,12 @@ begin
 
           if(returned_pulse = '1' and reg_valid_offset = '0') then
             reg_round_trip_time  <= offset_counter;
-            reg_hbc_offset       <= '0' & offset_counter(kWidthOffset-1 downto 1);
+            if(offset_counter(0) = '1') then
+              reg_hbc_offset     <= std_logic_vector(unsigned(offset_counter(kWidthOffset-1 downto 1)) +1);
+            else
+              reg_hbc_offset       <= '0' & offset_counter(kWidthOffset-1 downto 1);
+            end if;
+
             reg_valid_offset     <= '1';
           end if;
         end if;
