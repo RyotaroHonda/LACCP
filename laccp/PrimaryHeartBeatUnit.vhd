@@ -60,7 +60,7 @@ architecture RTL of PrimaryHeartBeatUnit is
   signal frame_state                        : HbfStateType;
 
   -- FSMs --
-  type TxProcessType is (WaitTxReq, SetHbfInfo, SetPrimaryReset, SendFrame);
+  type TxProcessType is (TxIdle, SetHbfInfo, SetPrimaryReset, SendFrame);
   signal state_tx       : TxProcessType;
 
   -- Tx --
@@ -157,10 +157,10 @@ begin
   begin
     if(sync_reset = '1') then
       validBusOut <= '0';
-      state_tx    <= WaitTxReq;
+      state_tx    <= TxIdle;
     elsif(clk'event and clk = '1') then
     case state_tx is
-      when WaitTxReq =>
+      when TxIdle =>
         validBusOut <= '0';
         if(backbeat_signal = '1') then
           state_tx          <= SetHbfInfo;
@@ -196,10 +196,10 @@ begin
       when SendFrame =>
         dataBusOut                          <= reg_frame_tx;
         validBusOut                         <= '1';
-        state_tx                            <= WaitTxReq;
+        state_tx                            <= TxIdle;
 
       when others =>
-        state_tx  <= WaitTxReq;
+        state_tx  <= TxIdle;
 
     end case;
     end if;

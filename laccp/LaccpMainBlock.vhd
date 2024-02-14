@@ -34,12 +34,19 @@ entity LaccpMainBlock is
       validPartnerLink  : out std_logic;
 
       -- RCAP --
+      idelayTapIn       : in unsigned(kWidthTap-1 downto 0);
+      serdesLantencyIn  : in signed(kWidthSerdesOffset-1 downto 0);
+      idelayTapOut      : out unsigned(kWidthTap-1 downto 0);
+      serdesLantencyOut : out signed(kWidthSerdesOffset-1 downto 0);
+
       hbuIsSyncedIn     : in std_logic;
       syncPulseIn       : in std_logic;
       syncPulseOut      : out std_logic;
 
+      upstreamOffset    : in signed(kWidthLaccpFineOffset-1 downto 0);
       validOffset       : out std_logic;
       hbcOffset         : out std_logic_vector(kWidthHbCount-1 downto 0);
+      fineOffset        : out signed(kWidthLaccpFineOffset-1 downto 0);
 
       -- LACCP Bus Port ------------------------------------------------
       -- Intra-port--
@@ -207,11 +214,18 @@ begin
         clk               => clk,
 
         -- User Interface --
+        idelayTapIn       => idelayTapIn,
+        serdesLantencyIn  => serdesLantencyIn,
+        idelayTapOut      => idelayTapOut,
+        serdesLantencyOut => serdesLantencyOut,
+
         isDone            => rcap_is_done,
         clockIsSyncedIn   => hbuIsSyncedIn,
 
+        upstreamOffset    => upstreamOffset,
         validOffset       => valid_offset,
         hbcOffset         => hbcOffset,
+        fineOffset        => fineOffset,
 
         -- LACCP Bus --
         pulseTakeOver     => rcap_pulse_takeover,
