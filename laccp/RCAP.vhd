@@ -146,6 +146,9 @@ begin
   pulseTakeOver   <= pulse_takeover;
   isReadyOut      <= '1';
 
+  idelayTapOut      <= idelay_tap_rx;
+  serdesLantencyOut <= serdes_latency_rx;
+
   -- Primary mode ----------------------------------------------------
   gen_prim : if kPrimaryMode = true generate
   begin

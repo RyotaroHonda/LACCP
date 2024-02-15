@@ -13,6 +13,7 @@ entity LaccpMainBlock is
     (
       kPrimaryMode      : boolean:= false;
       kNumInterconnect  : integer:= 16;
+      kFastClkFreq      : real:= 500.0;
       enDebug           : boolean:= false
     );
   port
@@ -204,6 +205,7 @@ begin
     generic map
       (
         kWidthOffset    => kWidthHbCount,
+        kFastClkFreq    => kFastClkFreq,
         kPrimaryMode    => kPrimaryMode,
         enDebug         => enDebug
       )
