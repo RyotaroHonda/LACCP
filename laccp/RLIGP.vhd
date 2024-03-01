@@ -55,8 +55,8 @@ architecture RTL of RLIGP is
 
   -- FSMs --
   type RxProcessType is (WaitRxIn, ParseFrame, CheckReplyReq, ReplyProcess, WaitInternalAck, ParseReply);
-  type SwitchProcessType is (WaitReq, SendFrame);
-  type TxProcessType is (WaitMyValid, SendFrame, WaitInternalAck, WaitReply, Done);
+  type SwitchProcessType is (TxIdle, SendFrame);
+  type TxProcessType is (TxIdle, SetAddress, WaitInternalAck, WaitReply, Done);
 
   signal state_rx       : RxProcessType;
   signal state_switch   : SwitchProcessType;
@@ -202,10 +202,10 @@ begin
     if(sync_reset = '1') then
       validBusOut   <= '0';
       reg_tx_ack    <= (others => '0');
-      state_switch  <= WaitReq;
+      state_switch  <= TxIdle;
     elsif(clk'event and clk = '1') then
     case state_switch is
-      when WaitReq =>
+      when TxIdle =>
         validBusOut <= '0';
         if(reg_tx_req(kWrite) = '1') then
           reg_tx_ack(kWrite)  <= '1';
@@ -219,10 +219,10 @@ begin
 
       when SendFrame =>
         validBusOut   <= '1';
-        state_switch  <= WaitReq;
+        state_switch  <= TxIdle;
 
       when others =>
-        state_switch  <= WaitReq;
+        state_switch  <= TxIdle;
 
     end case;
     end if;
@@ -235,16 +235,16 @@ begin
     if(sync_reset = '1') then
       reg_tx_req(kWrite)  <= '0';
       resend_counter      := (others => '1');
-      state_tx            <= WaitMyValid;
+      state_tx            <= TxIdle;
     elsif(clk'event and clk = '1') then
     case state_tx is
-      when WaitMyValid =>
+      when TxIdle =>
         if(validMyLink = '1') then
           reg_addr_my_link  <= addrMyLink;
-          state_tx          <= SendFrame;
+          state_tx          <= SetAddress;
         end if;
 
-      when SendFrame =>
+      when SetAddress =>
         reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRLIGP;
         reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrLinkAddress;
         reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRLIGP;
@@ -269,7 +269,7 @@ begin
           state_tx  <= Done;
         else
           if(to_integer(unsigned(resend_counter)) = 0) then
-            state_tx  <= WaitMyValid;
+            state_tx  <= TxIdle;
           else
             resend_counter  := std_logic_vector(unsigned(resend_counter) -1);
           end if;
@@ -279,7 +279,7 @@ begin
         null;
 
       when others =>
-        state_tx  <= WaitMyValid;
+        state_tx  <= TxIdle;
 
     end case;
     end if;

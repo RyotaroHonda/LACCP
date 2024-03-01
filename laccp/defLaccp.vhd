@@ -105,6 +105,15 @@ package defLaccp is
   constant kPulseNC6          : integer:= 6;
   constant kPulseNC7          : integer:= 7;
 
+
+  -- RCAP ---------------------------------------------------------------------------
+  constant kWidthLaccpFineOffset  : integer:= 16;
+
+  constant kFullCycle   : integer:= 8;
+  constant kHalfCycle   : integer:= 4;
+  function GetFastClockPeriod(fast_clock_freq : real) return integer;
+  function CalcFineLantency(idelay_tap : signed; serdes_latency : signed; fast_clock_period : integer)  return signed;
+
 end package defLaccp;
 -- ----------------------------------------------------------------------------------
 -- Package body
@@ -177,5 +186,27 @@ package body defLaccp is
   begin
     return (index - (kNumIntraPort-kNumExtIntraPort+1));
   end GetExtIntraIndex;
+
+  -- RCAP --------------------------------------------------------------------------
+  function GetFastClockPeriod(fast_clock_freq : real) return integer is
+    -- fast_clock_freq: unit is MHz
+    variable period   : integer;
+  begin
+    -- 1.0/(2.0*fast_clock_period)*1000*1000/(2000.0/2048.0);
+    period  := integer(500.0*1024.0/fast_clock_freq);
+    return period;
+  end GetFastClockPeriod;
+
+  function CalcFineLantency(idelay_tap : signed; serdes_latency : signed; fast_clock_period : integer)
+  return signed is
+    variable kTapDelay    : signed(9 downto 0):= to_signed(80, 10); -- 78ps
+    variable kPeriod      : signed(11 downto 0):= to_signed(fast_clock_period, 12);
+    variable idelay_val   : signed(15 downto 0);
+    variable serdes_val   : signed(15 downto 0);
+  begin
+    idelay_val  := idelay_tap*kTapDelay;
+    serdes_val  := serdes_latency*kPeriod;
+    return idelay_val + serdes_val;
+  end CalcFineLantency;
 
 end package body defLaccp;
