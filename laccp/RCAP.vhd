@@ -30,10 +30,11 @@ entity RCAP is
       idelayTapOut      : out unsigned(kWidthTap-1 downto 0);
       serdesLantencyOut : out signed(kWidthSerdesOffset-1 downto 0);
 
-      upstreamOffset  : in signed(kWidthLaccpFineOffset-1 downto 0);
+      upstreamOffset    : in signed(kWidthLaccpFineOffset-1 downto 0);
       validOffset       : out std_logic;
       hbcOffset         : out std_logic_vector(kWidthOffset-1 downto 0);
       fineOffset        : out signed(kWidthLaccpFineOffset-1 downto 0);
+      fineOffsetLocal   : out signed(kWidthLaccpFineOffset-1 downto 0);
 
       -- LACCP Bus --
       pulseTakeOver     : out std_logic;
@@ -195,6 +196,7 @@ begin
 
     hbcOffset         <= modified_hbc_offset;
     fineOffset        <= accumulated_offset;
+    fineOffsetLocal   <= modified_fine_offset;
     validOffset       <= valid_accumulated_offset;
 
     u_fine_carry : process(clk, sync_reset)

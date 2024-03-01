@@ -48,6 +48,7 @@ entity LaccpMainBlock is
       validOffset       : out std_logic;
       hbcOffset         : out std_logic_vector(kWidthHbCount-1 downto 0);
       fineOffset        : out signed(kWidthLaccpFineOffset-1 downto 0);
+      fineOffsetLocal   : out signed(kWidthLaccpFineOffset-1 downto 0);
 
       -- LACCP Bus Port ------------------------------------------------
       -- Intra-port--
@@ -228,6 +229,7 @@ begin
         validOffset       => valid_offset,
         hbcOffset         => hbcOffset,
         fineOffset        => fineOffset,
+        fineOffsetLocal   => fineOffsetLocal,
 
         -- LACCP Bus --
         pulseTakeOver     => rcap_pulse_takeover,
