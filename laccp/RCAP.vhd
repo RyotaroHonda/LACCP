@@ -18,7 +18,7 @@ entity RCAP is
   port
     (
       -- System --
-      rst               : in std_logic; -- Asynchronous, Active high
+      syncReset         : in std_logic; -- Active high
       clk               : in std_logic;
 
       -- User Interface --
@@ -55,10 +55,6 @@ architecture RTL of RCAP is
   attribute mark_debug  : boolean;
 
   -- System --
-  signal sync_reset           : std_logic;
-  signal grst_from_primary    : std_logic;
-  constant kWidthResetSync    : integer:= 16;
-  signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
   -- Internal signal decralation --
   constant kWidthResend : integer:= 28;
@@ -160,27 +156,26 @@ begin
     fineOffset          <= to_signed(0, fineOffset'length);
     validOffset         <= secondary_is_ready;
 
-    u_rcapstate : process(clk, sync_reset)
+    u_rcapstate : process(clk)
     begin
-      if(sync_reset = '1') then
-        is_done             <= '0';
-        pulse_takeover      <= '1';
-        req_send_fineoffset <= '1';
-      elsif(clk'event and clk = '1') then
-        if(grst_from_primary = '1') then
+      if(clk'event and clk = '1') then
+        if(syncReset = '1') then
           is_done             <= '0';
           pulse_takeover      <= '1';
-        elsif(secondary_is_ready = '1') then
-          is_done             <= '1';
-          pulse_takeover      <= '0';
-        else
-          null;
-        end if;
-
-        if(got_reply(kFineOffset) = '0') then
           req_send_fineoffset <= '1';
         else
-          req_send_fineoffset <= '0';
+          if(secondary_is_ready = '1') then
+            is_done             <= '1';
+            pulse_takeover      <= '0';
+          else
+            null;
+          end if;
+
+          if(got_reply(kFineOffset) = '0') then
+            req_send_fineoffset <= '1';
+          else
+            req_send_fineoffset <= '0';
+          end if;
         end if;
       end if;
     end process;
@@ -199,80 +194,82 @@ begin
     fineOffsetLocal   <= modified_fine_offset;
     validOffset       <= valid_accumulated_offset;
 
-    u_fine_carry : process(clk, sync_reset)
+    u_fine_carry : process(clk)
       variable kPlusCycle          : signed(fineOffset'range):= to_signed(kFullCycle*GetFastClockPeriod(kFastClkFreq), fineOffset'length);
       variable kMinusCycle         : signed(fineOffset'range):= to_signed(-kFullCycle*GetFastClockPeriod(kFastClkFreq), fineOffset'length);
       variable tmp_fine_offset     : signed(fineOffset'range);
       variable tmp2_fine_offset    : signed(fineOffset'range);
     begin
-      if(sync_reset = '1') then
-        valid_modified_offset     <= '0';
-        valid_accumulated_offset  <= '0';
-      elsif(clk'event and clk = '1') then
-        if(reg_valid_fineoffset = '1' and reg_valid_offset = '1') then
-          tmp_fine_offset := reg_fine_offset + semi_fine_offset;
-          if(tmp_fine_offset > kPlusCycle) then
-            modified_fine_offset  <= tmp_fine_offset - kPlusCycle;
-            modified_hbc_offset   <= std_logic_vector(unsigned(reg_hbc_offset) +1);
-          else
-            modified_fine_offset  <= tmp_fine_offset;
-            modified_hbc_offset   <= reg_hbc_offset;
-          end if;
-
-          valid_modified_offset   <= '1';
-        end if;
-
-        if(valid_modified_offset = '1') then
-          tmp2_fine_offset  := modified_fine_offset + upstream_fine_offset;
-          if(tmp2_fine_offset > kPlusCycle) then
-            accumulated_offset    <= tmp2_fine_offset - kPlusCycle;
-            modified_hbc_offset   <= std_logic_vector(unsigned(modified_hbc_offset) +1);
-          elsif(tmp2_fine_offset < kMinusCycle) then
-            accumulated_offset    <= tmp2_fine_offset + kPlusCycle;
-            modified_hbc_offset   <= std_logic_vector(unsigned(modified_hbc_offset) -1);
-          else
-            accumulated_offset    <= tmp2_fine_offset;
-          end if;
-
-          valid_accumulated_offset  <= '1';
-        end if;
-      end if;
-    end process;
-
-    u_offset : process(clk, sync_reset)
-    begin
-      if(sync_reset = '1') then
-        reg_hbc_offset      <= (others => '0');
-        reg_round_trip_time <= (others => '0');
-        reg_valid_offset    <= '0';
-      elsif(clk'event and clk = '1') then
-        if(grst_from_primary = '1') then
-          reg_valid_offset     <= '0';
-        elsif(is_done = '0') then
-          offset_counter  <= std_logic_vector(unsigned(offset_counter) +1);
-
-          if(offset_counter = kMaxOffset) then
-            probe_pulse   <= '1';
-          else
-            probe_pulse   <= '0';
-          end if;
-
-          if(returned_pulse = '1' and reg_valid_offset = '0') then
-            reg_round_trip_time  <= offset_counter;
-            reg_hbc_offset       <= '0' & offset_counter(kWidthOffset-1 downto 1);
-            if(offset_counter(0) = '1') then
-              semi_fine_offset   <= to_signed(kHalfCycle*GetFastClockPeriod(kFastClkFreq), semi_fine_offset'length);
+      if(clk'event and clk = '1') then
+        if(syncReset = '1') then
+          valid_modified_offset     <= '0';
+          valid_accumulated_offset  <= '0';
+        else
+          if(reg_valid_fineoffset = '1' and reg_valid_offset = '1') then
+            tmp_fine_offset := reg_fine_offset + semi_fine_offset;
+            if(tmp_fine_offset > kPlusCycle) then
+              modified_fine_offset  <= tmp_fine_offset - kPlusCycle;
+              modified_hbc_offset   <= std_logic_vector(unsigned(reg_hbc_offset) +1);
             else
-              semi_fine_offset   <= to_signed(0, semi_fine_offset'length);
+              modified_fine_offset  <= tmp_fine_offset;
+              modified_hbc_offset   <= reg_hbc_offset;
             end if;
 
-            reg_valid_offset     <= '1';
+            valid_modified_offset   <= '1';
+          end if;
+
+          if(valid_modified_offset = '1') then
+            tmp2_fine_offset  := modified_fine_offset + upstream_fine_offset;
+            if(tmp2_fine_offset > kPlusCycle) then
+              accumulated_offset    <= tmp2_fine_offset - kPlusCycle;
+              modified_hbc_offset   <= std_logic_vector(unsigned(modified_hbc_offset) +1);
+            elsif(tmp2_fine_offset < kMinusCycle) then
+              accumulated_offset    <= tmp2_fine_offset + kPlusCycle;
+              modified_hbc_offset   <= std_logic_vector(unsigned(modified_hbc_offset) -1);
+            else
+              accumulated_offset    <= tmp2_fine_offset;
+            end if;
+
+            valid_accumulated_offset  <= '1';
           end if;
         end if;
       end if;
     end process;
 
-    u_fineoffset : process(clk, sync_reset)
+    u_offset : process(clk)
+    begin
+      if(clk'event and clk = '1') then
+        if(syncReset = '1') then
+          reg_hbc_offset      <= (others => '0');
+          reg_round_trip_time <= (others => '0');
+          reg_valid_offset    <= '0';
+        else
+          if(is_done = '0') then
+            offset_counter  <= std_logic_vector(unsigned(offset_counter) +1);
+
+            if(offset_counter = kMaxOffset) then
+              probe_pulse   <= '1';
+            else
+              probe_pulse   <= '0';
+            end if;
+
+            if(returned_pulse = '1' and reg_valid_offset = '0') then
+              reg_round_trip_time  <= offset_counter;
+              reg_hbc_offset       <= '0' & offset_counter(kWidthOffset-1 downto 1);
+              if(offset_counter(0) = '1') then
+                semi_fine_offset   <= to_signed(kHalfCycle*GetFastClockPeriod(kFastClkFreq), semi_fine_offset'length);
+              else
+                semi_fine_offset   <= to_signed(0, semi_fine_offset'length);
+              end if;
+
+              reg_valid_offset     <= '1';
+            end if;
+          end if;
+        end if;
+      end if;
+    end process;
+
+    u_fineoffset : process(clk)
       variable dT_sec   : signed(reg_fine_offset'range):= (others => '0');
       variable dT_pri   : signed(reg_fine_offset'range):= (others => '0');
 
@@ -280,69 +277,64 @@ begin
       variable sec_idelay_tap : signed(idelay_tap_rx'length downto 0):= (others => '0');
       variable result   : signed(reg_fine_offset'range):= (others => '0');
     begin
-      if(sync_reset = '1') then
-        reg_fine_offset       <= (others => '0');
-        reg_valid_fineoffset  <= '0';
-      elsif(clk'event and clk = '1') then
-        if(grst_from_primary = '1') then
-          reg_valid_fineoffset     <= '0';
-        elsif(is_done = '0' and prioffset_valid = '1') then
-          pri_idelay_tap  := signed('0' & idelay_tap_rx);
-          sec_idelay_tap  := signed('0' & idelayTapIn);
+      if(clk'event and clk = '1') then
+        if(syncReset = '1') then
+          reg_fine_offset       <= (others => '0');
+          reg_valid_fineoffset  <= '0';
+        else
+          if(is_done = '0' and prioffset_valid = '1') then
+            pri_idelay_tap  := signed('0' & idelay_tap_rx);
+            sec_idelay_tap  := signed('0' & idelayTapIn);
 
-          dT_pri    := CalcFineLantency(pri_idelay_tap, serdes_latency_rx, GetFastClockPeriod(kFastClkFreq));
-          dT_sec    := CalcFineLantency(sec_idelay_tap, serdesLantencyIn,  GetFastClockPeriod(kFastClkFreq));
-          result    := dT_sec - dT_pri;
-          reg_fine_offset <= result(result'high) & result(result'high downto 1);
-          reg_valid_fineoffset     <= '1';
+            dT_pri    := CalcFineLantency(pri_idelay_tap, serdes_latency_rx, GetFastClockPeriod(kFastClkFreq));
+            dT_sec    := CalcFineLantency(sec_idelay_tap, serdesLantencyIn,  GetFastClockPeriod(kFastClkFreq));
+            result    := dT_sec - dT_pri;
+            reg_fine_offset <= result(result'high) & result(result'high downto 1);
+            reg_valid_fineoffset     <= '1';
+          end if;
         end if;
       end if;
     end process;
 
 
-    u_rcapstate : process(clk, sync_reset)
+    u_rcapstate : process(clk)
     begin
-      if(sync_reset = '1') then
-        pulse_takeover  <= '1';
-        is_done         <= '0';
-        req_send_done <= '0';
-        state_rcap      <= Init;
-      elsif(clk'event and clk = '1') then
-        case state_rcap is
-          when Init =>
-            pulse_takeover  <= '1';
-            is_done         <= '0';
-            req_send_done <= '0';
-            state_rcap      <= AdjustClock;
-
-          when AdjustClock =>
-            pulse_takeover  <= '1';
-
-            if(grst_from_primary = '1') then
-              state_rcap  <= Init;
-            elsif(clockIsSyncedIn = '1') then
-              req_send_done <= '1';
-              state_rcap      <= Finalize;
-            end if;
-
-          when Finalize =>
-            if(grst_from_primary = '1') then
-              state_rcap      <= Init;
-            elsif(got_reply(kDone) = '1') then
+      if(clk'event and clk = '1') then
+        if(syncReset = '1') then
+          pulse_takeover  <= '1';
+          is_done         <= '0';
+          req_send_done <= '0';
+          state_rcap      <= Init;
+        else
+          case state_rcap is
+            when Init =>
+              pulse_takeover  <= '1';
+              is_done         <= '0';
               req_send_done <= '0';
-              state_rcap      <= Done;
-            end if;
+              state_rcap      <= AdjustClock;
 
-          when Done =>
-            is_done         <= '1';
-            pulse_takeover  <= '0';
-            if(grst_from_primary = '1') then
-              state_rcap      <= Init;
-            end if;
+            when AdjustClock =>
+              pulse_takeover  <= '1';
 
-          when others => null;
+              if(clockIsSyncedIn = '1') then
+                req_send_done <= '1';
+                state_rcap      <= Finalize;
+              end if;
 
-        end case;
+            when Finalize =>
+              if(got_reply(kDone) = '1') then
+                req_send_done <= '0';
+                state_rcap      <= Done;
+              end if;
+
+            when Done =>
+              is_done         <= '1';
+              pulse_takeover  <= '0';
+
+            when others => null;
+
+          end case;
+        end if;
       end if;
     end process;
 
@@ -358,7 +350,7 @@ begin
       kRegisterOut  => false
       )
     port map(
-      rst       => sync_reset,
+      rst       => syncReset,
       clk       => clk,
       wrEn      => validBusIn,
       rdEn      => re_rx_fifo,
@@ -371,242 +363,237 @@ begin
       );
 
 
-  u_rxfsm : process(clk, sync_reset)
+  u_rxfsm : process(clk)
     variable  rx_register : std_logic_vector(kPosRegister'range);
   begin
-    if(sync_reset = '1') then
-      secondary_is_ready  <= '0';
-      prioffset_valid     <= '0';
-      re_rx_fifo          <= '0';
-      reg_tx_req(kReply)  <= '0';
-      got_reply           <= (others => '0');
-      state_rx            <= WaitRxIn;
-    elsif(clk'event and clk = '1') then
-    case state_rx is
-      when WaitRxIn =>
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
+        secondary_is_ready  <= '0';
+        prioffset_valid     <= '0';
+        re_rx_fifo          <= '0';
         reg_tx_req(kReply)  <= '0';
-        if(empty_rx_fifo = '0') then
-          re_rx_fifo  <= '1';
-          state_rx          <= ParseFrame;
-        end if;
+        got_reply           <= (others => '0');
+        state_rx            <= WaitRxIn;
+      else
+      case state_rx is
+        when WaitRxIn =>
+          reg_tx_req(kReply)  <= '0';
+          if(empty_rx_fifo = '0') then
+            re_rx_fifo  <= '1';
+            state_rx          <= ParseFrame;
+          end if;
 
-      when ParseFrame =>
-        re_rx_fifo  <= '0';
+        when ParseFrame =>
+          re_rx_fifo  <= '0';
 
-        if(rd_valid_rx_fifo = '1') then
-          if(isWrite(dout_rx_fifo(kPosCmd'range))) then
-            if(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrDone) then
-              reg_frame_rx      <= dout_rx_fifo;
-              reg_offset_rx     <= dout_rx_fifo(kPosRegister'range);
-              secondary_is_ready  <= '1';
-              state_rx          <= CheckReplyReq;
-            elsif(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrFineOffset) then
-              reg_frame_rx          <= dout_rx_fifo;
-              rx_register           := dout_rx_fifo(kPosRegister'range);
-              idelay_tap_rx         <= unsigned(rx_register(kWidthTap-1 downto 0));
-              serdes_latency_rx     <= signed(rx_register(kWidthSerdesOffset-1 + kWidthTap downto kWidthTap));
-              upstream_fine_offset  <= signed(rx_register(kWidthLaccpFineOffset-1 +kWidthSerdesOffset + kWidthTap downto kWidthSerdesOffset + kWidthTap));
-              prioffset_valid       <= '1';
-              state_rx              <= CheckReplyReq;
+          if(rd_valid_rx_fifo = '1') then
+            if(isWrite(dout_rx_fifo(kPosCmd'range))) then
+              if(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrDone) then
+                reg_frame_rx      <= dout_rx_fifo;
+                reg_offset_rx     <= dout_rx_fifo(kPosRegister'range);
+                secondary_is_ready  <= '1';
+                state_rx          <= CheckReplyReq;
+              elsif(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrFineOffset) then
+                reg_frame_rx          <= dout_rx_fifo;
+                rx_register           := dout_rx_fifo(kPosRegister'range);
+                idelay_tap_rx         <= unsigned(rx_register(kWidthTap-1 downto 0));
+                serdes_latency_rx     <= signed(rx_register(kWidthSerdesOffset-1 + kWidthTap downto kWidthTap));
+                upstream_fine_offset  <= signed(rx_register(kWidthLaccpFineOffset-1 +kWidthSerdesOffset + kWidthTap downto kWidthSerdesOffset + kWidthTap));
+                prioffset_valid       <= '1';
+                state_rx              <= CheckReplyReq;
+              else
+                -- This frame is not for me --
+                state_rx  <= WaitRxIn;
+              end if;
+            elsif(isReply(dout_rx_fifo(kPosCmd'range))) then
+              reg_frame_rx  <= dout_rx_fifo;
+              state_rx      <= ParseReply;
             else
               -- This frame is not for me --
               state_rx  <= WaitRxIn;
             end if;
-          elsif(isReply(dout_rx_fifo(kPosCmd'range))) then
-            reg_frame_rx  <= dout_rx_fifo;
-            state_rx      <= ParseReply;
+          end if;
+
+        -- From Write Command --
+        when CheckReplyReq =>
+          if('1' = reg_frame_rx(kPosCmd'low + kCmdReplyRequest)) then
+            state_rx  <= ReplyProcess;
           else
-            -- This frame is not for me --
             state_rx  <= WaitRxIn;
           end if;
-        end if;
 
-      -- From Write Command --
-      when CheckReplyReq =>
-        if('1' = reg_frame_rx(kPosCmd'low + kCmdReplyRequest)) then
-          state_rx  <= ReplyProcess;
-        else
+        when ReplyProcess =>
+          if(reg_frame_rx(kPosDestModAddr'range)   = kAddrRCAP and
+            reg_frame_rx(kPosDestLocalAddr'range) = kAddrDone) then
+            reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRCAP;
+            reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrDone;
+            reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRCAP;
+            reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrDone;
+            reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                            GenCmdVect(kCmdReply);
+            reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
+            reg_frame_tx(kReply)(kPosRegister'range)      <= (others => '0');
+            reg_tx_req(kReply)                            <= '1';
+            state_rx                                      <= WaitInternalAck;
+          elsif(reg_frame_rx(kPosDestModAddr'range)   = kAddrRCAP and
+                reg_frame_rx(kPosDestLocalAddr'range) = kAddrFineOffset) then
+            reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRCAP;
+            reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrFineOffset;
+            reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRCAP;
+            reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrFineOffset;
+            reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                            GenCmdVect(kCmdReply);
+            reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
+            reg_frame_tx(kReply)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kWidthTap-kWidthSerdesOffset)) & std_logic_vector(serdesLantencyIn) & std_logic_vector(idelayTapIn);
+  --            kWidthTap-1 downto 0 => std_logic_vector(idelayTapIn),
+  --            kWidthSerdesOffset-1 + kWidthTap downto kWidthTap => std_logic_vector(serdesLantencyIn),
+  --            others => '0'
+  --            );
+            reg_tx_req(kReply)                            <= '1';
+            state_rx                                      <= WaitInternalAck;
+          end if;
+
+        when WaitInternalAck =>
+          if(reg_tx_ack(kReply) = '1') then
+            reg_tx_req(kReply)  <= '0';
+            state_rx            <= WaitRxIn;
+          end if;
+
+        -- From Reply Command --
+        when ParseReply =>
+          if(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRCAP and
+            reg_frame_rx(kPosSrcLocalAddr'range) = kAddrDone) then
+              got_reply(kDone)  <= '1';
+          elsif(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRCAP and
+                reg_frame_rx(kPosSrcLocalAddr'range) = kAddrFineOffset) then
+              rx_register       := reg_frame_rx(kPosRegister'range);
+              idelay_tap_rx     <= unsigned(rx_register(kWidthTap-1 downto 0));
+              serdes_latency_rx <= signed(rx_register(kWidthSerdesOffset-1 + kWidthTap downto kWidthTap));
+              got_reply(kFineOffset)  <= '1';
+          end if;
           state_rx  <= WaitRxIn;
-        end if;
 
-      when ReplyProcess =>
-        if(reg_frame_rx(kPosDestModAddr'range)   = kAddrRCAP and
-           reg_frame_rx(kPosDestLocalAddr'range) = kAddrDone) then
-          reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRCAP;
-          reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrDone;
-          reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRCAP;
-          reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrDone;
-          reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
-                                                           GenCmdVect(kCmdReply);
-          reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
-          reg_frame_tx(kReply)(kPosRegister'range)      <= (others => '0');
-          reg_tx_req(kReply)                            <= '1';
-          state_rx                                      <= WaitInternalAck;
-        elsif(reg_frame_rx(kPosDestModAddr'range)   = kAddrRCAP and
-              reg_frame_rx(kPosDestLocalAddr'range) = kAddrFineOffset) then
-          reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRCAP;
-          reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrFineOffset;
-          reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRCAP;
-          reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrFineOffset;
-          reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
-                                                           GenCmdVect(kCmdReply);
-          reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
-          reg_frame_tx(kReply)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kWidthTap-kWidthSerdesOffset)) & std_logic_vector(serdesLantencyIn) & std_logic_vector(idelayTapIn);
---            kWidthTap-1 downto 0 => std_logic_vector(idelayTapIn),
---            kWidthSerdesOffset-1 + kWidthTap downto kWidthTap => std_logic_vector(serdesLantencyIn),
---            others => '0'
---            );
-          reg_tx_req(kReply)                            <= '1';
-          state_rx                                      <= WaitInternalAck;
-        end if;
-
-      when WaitInternalAck =>
-        if(reg_tx_ack(kReply) = '1') then
-          reg_tx_req(kReply)  <= '0';
-          state_rx            <= WaitRxIn;
-        end if;
-
-      -- From Reply Command --
-      when ParseReply =>
-        if(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRCAP and
-           reg_frame_rx(kPosSrcLocalAddr'range) = kAddrDone) then
-            got_reply(kDone)  <= '1';
-        elsif(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRCAP and
-              reg_frame_rx(kPosSrcLocalAddr'range) = kAddrFineOffset) then
-            rx_register       := reg_frame_rx(kPosRegister'range);
-            idelay_tap_rx     <= unsigned(rx_register(kWidthTap-1 downto 0));
-            serdes_latency_rx <= signed(rx_register(kWidthSerdesOffset-1 + kWidthTap downto kWidthTap));
-            got_reply(kFineOffset)  <= '1';
-        end if;
-        state_rx  <= WaitRxIn;
-
-      when others =>
-        state_rx  <= WaitRxIn;
+        when others =>
+          state_rx  <= WaitRxIn;
 
 
-      end case;
+        end case;
+      end if;
     end if;
   end process;
 
 
   -- Tx Process ----------------------------------------------------------
-  u_intswith : process(clk, sync_reset)
+  u_intswith : process(clk)
   begin
-    if(sync_reset = '1') then
-      validBusOut   <= '0';
-      reg_tx_ack    <= (others => '0');
-      state_switch  <= WaitReq;
-    elsif(clk'event and clk = '1') then
-    case state_switch is
-      when WaitReq =>
-        validBusOut <= '0';
-        if(reg_tx_req(kWrite) = '1') then
-          reg_tx_ack(kWrite)  <= '1';
-          dataBusOut          <= reg_frame_tx(kWrite);
-          state_switch        <= SendFrame;
-        elsif(reg_tx_req(kReply) = '1') then
-          reg_tx_ack(kReply)  <= '1';
-          dataBusOut          <= reg_frame_tx(kReply);
-          state_switch        <= SendFrame;
-        end if;
-
-      when SendFrame =>
-        validBusOut   <= '1';
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
+        validBusOut   <= '0';
+        reg_tx_ack    <= (others => '0');
         state_switch  <= WaitReq;
+      else
+      case state_switch is
+        when WaitReq =>
+          validBusOut <= '0';
+          if(reg_tx_req(kWrite) = '1') then
+            reg_tx_ack(kWrite)  <= '1';
+            dataBusOut          <= reg_frame_tx(kWrite);
+            state_switch        <= SendFrame;
+          elsif(reg_tx_req(kReply) = '1') then
+            reg_tx_ack(kReply)  <= '1';
+            dataBusOut          <= reg_frame_tx(kReply);
+            state_switch        <= SendFrame;
+          end if;
 
-      when others =>
-        state_switch  <= WaitReq;
+        when SendFrame =>
+          validBusOut   <= '1';
+          state_switch  <= WaitReq;
 
-    end case;
+        when others =>
+          state_switch  <= WaitReq;
+
+      end case;
+      end if;
     end if;
   end process;
 
 
-  u_txfsm : process(clk, sync_reset)
+  u_txfsm : process(clk)
     variable resend_counter : std_logic_vector(kWidthResend-1 downto 0);
   begin
-    if(sync_reset = '1') then
-      reg_tx_req(kWrite)  <= '0';
-      resend_counter      := (others => '1');
-      wait_reply          <= (others => '0');
-      state_tx            <= TxIdle;
-    elsif(clk'event and clk = '1') then
-    case state_tx is
-      when TxIdle =>
-        if(req_send_done = '1') then
-          state_tx          <= SetDoneMessange;
-        elsif(req_send_fineoffset = '1') then
-          state_tx          <= SetFineOffset;
-        end if;
-
-      when SetDoneMessange =>
-        reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRCAP;
-        reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrDone;
-        reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRCAP;
-        reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrDone;
-        reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
-                                                         GenCmdVect(kCmdWrite) or
-                                                         GenCmdVect(kCmdReplyRequest);
-        reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
-        reg_frame_tx(kWrite)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kWidthOffset)) & modified_hbc_offset;
-        reg_tx_req(kWrite)                            <= '1';
-        wait_reply(kDone)                             <= '1';
-        state_tx                                      <= WaitInternalAck;
-
-      when SetFineOffset =>
-        reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRCAP;
-        reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrFineOffset;
-        reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRCAP;
-        reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrFineOffset;
-        reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
-                                                         GenCmdVect(kCmdWrite) or
-                                                         GenCmdVect(kCmdReplyRequest);
-        reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
-        reg_frame_tx(kWrite)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kWidthTap-kWidthSerdesOffset-kWidthLaccpFineOffset)) & std_logic_vector(upstreamOffset) & std_logic_vector(serdesLantencyIn) & std_logic_vector(idelayTapIn);
---          kWidthTap-1 downto 0 => std_logic_vector(idelayTapIn),
---          kWidthSerdesOffset-1 + kWidthTap downto kWidthTap => std_logic_vector(serdesLantencyIn),
---          others => '0'
---          );
-        reg_tx_req(kWrite)                            <= '1';
-        wait_reply(kFineOffset)                       <= '1';
-        state_tx                                      <= WaitInternalAck;
-
-      when WaitInternalAck =>
-        if(reg_tx_ack(kWrite) = '1') then
-          resend_counter      := (others => '1');
-          reg_tx_req(kWrite)  <= '0';
-          state_tx            <= WaitReply;
-        end if;
-
-      when WaitReply =>
-        if(unsigned(got_reply xor wait_reply) /= 0) then
-          if(to_integer(unsigned(resend_counter)) = 0) then
-            state_tx  <= TxIdle;
-          else
-            resend_counter  := std_logic_vector(unsigned(resend_counter) -1);
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
+        reg_tx_req(kWrite)  <= '0';
+        resend_counter      := (others => '1');
+        wait_reply          <= (others => '0');
+        state_tx            <= TxIdle;
+      else
+      case state_tx is
+        when TxIdle =>
+          if(req_send_done = '1') then
+            state_tx          <= SetDoneMessange;
+          elsif(req_send_fineoffset = '1') then
+            state_tx          <= SetFineOffset;
           end if;
-        else
+
+        when SetDoneMessange =>
+          reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRCAP;
+          reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrDone;
+          reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRCAP;
+          reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrDone;
+          reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                          GenCmdVect(kCmdWrite) or
+                                                          GenCmdVect(kCmdReplyRequest);
+          reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
+          reg_frame_tx(kWrite)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kWidthOffset)) & modified_hbc_offset;
+          reg_tx_req(kWrite)                            <= '1';
+          wait_reply(kDone)                             <= '1';
+          state_tx                                      <= WaitInternalAck;
+
+        when SetFineOffset =>
+          reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRCAP;
+          reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrFineOffset;
+          reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRCAP;
+          reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrFineOffset;
+          reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                          GenCmdVect(kCmdWrite) or
+                                                          GenCmdVect(kCmdReplyRequest);
+          reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
+          reg_frame_tx(kWrite)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kWidthTap-kWidthSerdesOffset-kWidthLaccpFineOffset)) & std_logic_vector(upstreamOffset) & std_logic_vector(serdesLantencyIn) & std_logic_vector(idelayTapIn);
+  --          kWidthTap-1 downto 0 => std_logic_vector(idelayTapIn),
+  --          kWidthSerdesOffset-1 + kWidthTap downto kWidthTap => std_logic_vector(serdesLantencyIn),
+  --          others => '0'
+  --          );
+          reg_tx_req(kWrite)                            <= '1';
+          wait_reply(kFineOffset)                       <= '1';
+          state_tx                                      <= WaitInternalAck;
+
+        when WaitInternalAck =>
+          if(reg_tx_ack(kWrite) = '1') then
+            resend_counter      := (others => '1');
+            reg_tx_req(kWrite)  <= '0';
+            state_tx            <= WaitReply;
+          end if;
+
+        when WaitReply =>
+          if(unsigned(got_reply xor wait_reply) /= 0) then
+            if(to_integer(unsigned(resend_counter)) = 0) then
+              state_tx  <= TxIdle;
+            else
+              resend_counter  := std_logic_vector(unsigned(resend_counter) -1);
+            end if;
+          else
+            state_tx  <= TxIdle;
+          end if;
+
+        --when Done =>
+        --  null;
+
+        when others =>
           state_tx  <= TxIdle;
-        end if;
 
-      --when Done =>
-      --  null;
-
-      when others =>
-        state_tx  <= TxIdle;
-
-    end case;
-    end if;
-  end process;
-
-  -- Reset sequence --
-  sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
-  begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
+      end case;
+      end if;
     end if;
   end process;
 

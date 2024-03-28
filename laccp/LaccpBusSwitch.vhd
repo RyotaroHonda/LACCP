@@ -15,7 +15,7 @@ entity LaccpBusSwitch is
   port
     (
       -- System --
-      rst             : in std_logic; -- Asynchronous, Active high
+      syncReset       : in std_logic; -- Active high
       clk             : in std_logic;
 
       -- Bus ports --
@@ -33,9 +33,6 @@ architecture RTL of LaccpBusSwitch is
   attribute mark_debug  : boolean;
 
   -- System --
-  signal sync_reset           : std_logic;
-  constant kWidthResetSync    : integer:= 16;
-  signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
   -- Internal signal decralation --
   constant kNumBusPorts       : integer:= kNumIntraPort + kNumInterconnect + 1;
@@ -81,7 +78,7 @@ begin
         kRegisterOut  => false
         )
       port map(
-        rst       => sync_reset,
+        rst       => syncReset,
         clk       => clk,
         wrEn      => validBusIn(i),
         rdEn      => re_rx_fifo(i),
@@ -95,118 +92,107 @@ begin
   end generate;
 
   -- Bus Switcher ------------------------------------------------------
-  u_switch : process(clk, sync_reset)
+  u_switch : process(clk)
     variable index_rx     : integer range -1 to kNumBusPorts:= 0;
     variable index_intra  : integer range -1 to kNumBusPorts:= 0;
     variable tmp_vect     : std_logic_vector(re_rx_fifo'range);
   begin
-    if(sync_reset = '1') then
-      intra_connect   <= '0';
-      en_broadcast    <= '0';
-      inter_connect   <= '0';
-      miku_connect    <= '0';
-      validBusOut     <= (others => '0');
-      re_rx_fifo      <= (others => '0');
-
-      state_switch              <= WaitRxIn;
-
-    elsif(clk'event and clk = '1') then
-    case state_switch is
-      when WaitRxIn =>
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
         intra_connect   <= '0';
         en_broadcast    <= '0';
         inter_connect   <= '0';
         miku_connect    <= '0';
-
         validBusOut     <= (others => '0');
         re_rx_fifo      <= (others => '0');
 
-        if(to_integer(unsigned(not empty_rx_fifo)) /= 0) then
-          re_rx_fifo    <= IsolateRMHB(not empty_rx_fifo);
-          tmp_vect      := IsolateRMHB(not empty_rx_fifo);
-          index_rx      := GetBitIndex(tmp_vect);
-          state_switch  <= ParseFrame;
-        end if;
+        state_switch              <= WaitRxIn;
+      else
+      case state_switch is
+        when WaitRxIn =>
+          intra_connect   <= '0';
+          en_broadcast    <= '0';
+          inter_connect   <= '0';
+          miku_connect    <= '0';
 
-      when ParseFrame =>
-        re_rx_fifo    <= (others => '0');
+          validBusOut     <= (others => '0');
+          re_rx_fifo      <= (others => '0');
 
-        if(rd_valid_rx_fifo(index_rx) = '1') then
-          reg_bus_data   <= dout_rx_fifo(index_rx);
-
-          -- Resoluve intra port --
-          if(kBroadCast = dout_rx_fifo(index_rx)(kPosDestModAddr'range)) then
-            intra_connect   <= '1';
-            en_broadcast    <= '1';
-          elsif(index_rx /= GetIntraIndex(dout_rx_fifo(index_rx)(kPosDestModAddr'range))) then
-            intra_connect   <= '1';
-            index_intra     := GetIntraIndex(dout_rx_fifo(index_rx)(kPosDestModAddr'range));
-          else
-            intra_connect   <= '0';
+          if(to_integer(unsigned(not empty_rx_fifo)) /= 0) then
+            re_rx_fifo    <= IsolateRMHB(not empty_rx_fifo);
+            tmp_vect      := IsolateRMHB(not empty_rx_fifo);
+            index_rx      := GetBitIndex(tmp_vect);
+            state_switch  <= ParseFrame;
           end if;
 
-          -- Passage permission --
-          if(false = CheckInterPortRange(index_rx) and
-             '1' = dout_rx_fifo(index_rx)(kPosCmd'low + kCmdPassagePermission)) then
-            inter_connect   <= '1';
-          else
-            inter_connect   <= '0';
+        when ParseFrame =>
+          re_rx_fifo    <= (others => '0');
+
+          if(rd_valid_rx_fifo(index_rx) = '1') then
+            reg_bus_data   <= dout_rx_fifo(index_rx);
+
+            -- Resoluve intra port --
+            if(kBroadCast = dout_rx_fifo(index_rx)(kPosDestModAddr'range)) then
+              intra_connect   <= '1';
+              en_broadcast    <= '1';
+            elsif(index_rx /= GetIntraIndex(dout_rx_fifo(index_rx)(kPosDestModAddr'range))) then
+              intra_connect   <= '1';
+              index_intra     := GetIntraIndex(dout_rx_fifo(index_rx)(kPosDestModAddr'range));
+            else
+              intra_connect   <= '0';
+            end if;
+
+            -- Passage permission --
+            if(false = CheckInterPortRange(index_rx) and
+              '1' = dout_rx_fifo(index_rx)(kPosCmd'low + kCmdPassagePermission)) then
+              inter_connect   <= '1';
+            else
+              inter_connect   <= '0';
+            end if;
+
+            -- Allow departure --
+            if(index_rx /= kPortMikumari and
+              '1' = dout_rx_fifo(index_rx)(kPosCmd'low + kCmdDepature)) then
+                miku_connect  <= '1';
+            else
+                miku_connect  <= '0';
+            end if;
+
+            state_switch <= Connect;
           end if;
 
-          -- Allow departure --
-          if(index_rx /= kPortMikumari and
-            '1' = dout_rx_fifo(index_rx)(kPosCmd'low + kCmdDepature)) then
-              miku_connect  <= '1';
-          else
-              miku_connect  <= '0';
+        when Connect =>
+          if(intra_connect = '1') then
+            if(en_broadcast = '1') then
+              for i in 0 to kNumIntraPort-1 loop
+                dataBusOut(i + kPortRLIGP)   <= reg_bus_data;
+                validBusOut(i + kPortRLIGP)  <= busReadyIn(i + kPortRLIGP);
+              end loop;
+            else
+              dataBusOut(index_intra)   <= reg_bus_data;
+              validBusOut(index_intra)  <= busReadyIn(index_intra);
+            end if;
           end if;
 
-          state_switch <= Connect;
-        end if;
-
-      when Connect =>
-        if(intra_connect = '1') then
-          if(en_broadcast = '1') then
-            for i in 0 to kNumIntraPort-1 loop
-              dataBusOut(i + kPortRLIGP)   <= reg_bus_data;
-              validBusOut(i + kPortRLIGP)  <= busReadyIn(i + kPortRLIGP);
+          if(inter_connect  = '1') then
+            for i in kPortInterBegin to kPortInterEnd loop
+              dataBusOut(i)   <= reg_bus_data;
+              validBusOut(i)  <= busReadyIn(i);
             end loop;
-          else
-            dataBusOut(index_intra)   <= reg_bus_data;
-            validBusOut(index_intra)  <= busReadyIn(index_intra);
           end if;
-        end if;
 
-        if(inter_connect  = '1') then
-          for i in kPortInterBegin to kPortInterEnd loop
-            dataBusOut(i)   <= reg_bus_data;
-            validBusOut(i)  <= busReadyIn(i);
-          end loop;
-        end if;
+          if(miku_connect = '1') then
+            dataBusOut(kPortMikumari)   <= reg_bus_data;
+            validBusOut(kPortMikumari)  <= busReadyIn(kPortMikumari);
+          end if;
 
-        if(miku_connect = '1') then
-          dataBusOut(kPortMikumari)   <= reg_bus_data;
-          validBusOut(kPortMikumari)  <= busReadyIn(kPortMikumari);
-        end if;
+          state_switch   <= WaitRxIn;
 
-        state_switch   <= WaitRxIn;
+        when others =>
+          state_switch      <= WaitRxIn;
 
-      when others =>
-        state_switch      <= WaitRxIn;
-
-    end case;
-
-    end if;
-  end process;
-
-  -- Reset sequence --
-  sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
-  begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
+      end case;
+      end if;
     end if;
   end process;
 

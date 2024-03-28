@@ -55,6 +55,9 @@ architecture RTL of HeartBeatUnit is
   constant kWidthResetSync    : integer:= 16;
   signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
+  attribute async_reg : string;
+  attribute async_reg of u_sync_reset : label is "true";
+
   -- Internal signal decralation --
   signal heartbeat_signal, backbeat_signal  : std_logic;
   constant kMaxCount          : std_logic_vector(heartbeatCount'range):= (others => '1');
@@ -110,21 +113,24 @@ begin
   heartbeatCount  <= hb_counter;
   hbfNumber       <= local_hbf_number;
   frameState      <= frame_state;
+  hbfNumMismatch  <= reg_hbfnum_mismatch;
 
   -- HeartBeat -----------------------------------------------------------
-  u_counter : process(sync_reset, clk)
+  u_counter : process(clk)
   begin
-    if(sync_reset = '1') then
-      hbc_is_synced   <= '0';
-      hb_counter      <= (others => '0');
-    elsif(clk'event and clk = '1') then
-      if(grst_from_primary = '1') then
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
         hbc_is_synced   <= '0';
-      elsif(validOffsetIn = '1' and syncPulseIn = '1') then
-        hbc_is_synced   <= '1';
-        hb_counter      <= std_logic_vector(unsigned(hbcOffsetIn)+1);
+        hb_counter      <= (others => '0');
       else
-        hb_counter  <= std_logic_vector(unsigned(hb_counter) +1);
+        if(grst_from_primary = '1') then
+          hbc_is_synced   <= '0';
+        elsif(validOffsetIn = '1' and syncPulseIn = '1') then
+          hbc_is_synced   <= '1';
+          hb_counter      <= std_logic_vector(unsigned(hbcOffsetIn)+1);
+        else
+          hb_counter  <= std_logic_vector(unsigned(hb_counter) +1);
+        end if;
       end if;
 
     end if;
@@ -144,74 +150,78 @@ begin
     end if;
   end process;
 
-  u_hbf : process(sync_reset, clk)
+  u_hbf : process(clk)
   begin
-    if(sync_reset = '1') then
-      hbf_is_synced         <= '0';
-      reg_hbfnum_mismatch   <= '0';
-      local_hbf_number      <= (others => '0');
-    elsif(clk'event and clk = '1') then
-      if(grst_from_primary = '1') then
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
         hbf_is_synced         <= '0';
         reg_hbfnum_mismatch   <= '0';
-      elsif(enStandAlone = '1') then
-        -- Stand alone mode --
-        if(heartbeat_signal = '1') then
-          -- Heartbeat timing --
-          local_hbf_number   <= std_logic_vector(unsigned(local_hbf_number) +1);
-        end if;
-      elsif(hbc_is_synced = '1' and ghbf_is_valid = '1') then
-        if(hbf_is_synced = '0') then
-          -- First HBF number update --
-          hbf_is_synced     <= '1';
-          local_hbf_number  <= global_hbf_number;
-        else
-          -- Normal process --
-          if(comp_hbfnum = '1') then
-            -- Global HBF number update timing --
-            if(local_hbf_number /= global_hbf_number) then
-              reg_hbfnum_mismatch   <= '1';
-              if(keepLocalHbfNum = '0') then
-                local_hbf_number  <= global_hbf_number;
-              end if;
-            else
-              reg_hbfnum_mismatch   <= '0';
-            end if;
-          elsif(heartbeat_signal = '1') then
+        local_hbf_number      <= (others => '0');
+      else
+        if(grst_from_primary = '1') then
+          hbf_is_synced         <= '0';
+          reg_hbfnum_mismatch   <= '0';
+        elsif(enStandAlone = '1') then
+          -- Stand alone mode --
+          if(heartbeat_signal = '1') then
             -- Heartbeat timing --
             local_hbf_number   <= std_logic_vector(unsigned(local_hbf_number) +1);
-          else
-            null;
           end if;
-        end if;
+        elsif(hbc_is_synced = '1' and ghbf_is_valid = '1') then
+          if(hbf_is_synced = '0') then
+            -- First HBF number update --
+            hbf_is_synced     <= '1';
+            local_hbf_number  <= global_hbf_number;
+          else
+            -- Normal process --
+            if(comp_hbfnum = '1') then
+              -- Global HBF number update timing --
+              if(local_hbf_number /= global_hbf_number) then
+                reg_hbfnum_mismatch   <= '1';
+                if(keepLocalHbfNum = '0') then
+                  local_hbf_number  <= global_hbf_number;
+                end if;
+              else
+                reg_hbfnum_mismatch   <= '0';
+              end if;
+            elsif(heartbeat_signal = '1') then
+              -- Heartbeat timing --
+              local_hbf_number   <= std_logic_vector(unsigned(local_hbf_number) +1);
+            else
+              null;
+            end if;
+          end if;
 
-      else
-        null;
+        else
+          null;
+        end if;
       end if;
     end if;
   end process;
 
   -- DAQ state -----------------------------------------------------------
-  u_framestate : process(sync_reset, clk)
+  u_framestate : process(clk)
   begin
-    if(sync_reset = '1') then
-      frame_state   <= kIdleFrame;
-    elsif(clk'event and clk = '1') then
-      if(enStandAlone = '1') then
-        -- Stand-alone mode --
-        if(forceOn = '1') then
-          frame_state <= kActiveFrame;
-        else
-          if(backbeat_signal = '1' and hbfCtrlGateIn = '1') then
-            frame_state   <= kActiveFrame;
-          elsif(backbeat_signal = '1' and hbfCtrlGateIn = '0') then
-            frame_state   <= kIdleFrame;
-          end if;
-        end if;
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
+        frame_state   <= kIdleFrame;
       else
-        -- Synchronized mode --
-        if(comp_hbfnum = '1') then
-          frame_state <= global_frame_state;
+        if(enStandAlone = '1') then
+          -- Stand-alone mode --
+          if(forceOn = '1') then
+            frame_state <= kActiveFrame;
+          else
+            if(backbeat_signal = '1' and hbfCtrlGateIn = '1') then
+              frame_state   <= kActiveFrame;
+            elsif(backbeat_signal = '1' and hbfCtrlGateIn = '0') then
+              frame_state   <= kIdleFrame;
+            end if;
+          end if;
+        else
+          -- Synchronized mode --
+          if(comp_hbfnum = '1') then
+            frame_state <= global_frame_state;
+          end if;
         end if;
       end if;
     end if;
@@ -244,53 +254,55 @@ begin
 
   u_rxfsm : process(clk, sync_reset)
   begin
-    if(sync_reset = '1') then
-      re_rx_fifo          <= '0';
-      grst_from_primary   <= '0';
-      comp_hbfnum         <= '0';
-      ghbf_is_valid       <= '0';
-      global_hbf_number   <= (others => '0');
-      global_frame_state  <= kIdleFrame;
-      state_rx            <= WaitRxIn;
-    elsif(clk'event and clk = '1') then
-    case state_rx is
-      when WaitRxIn =>
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
+        re_rx_fifo          <= '0';
         grst_from_primary   <= '0';
         comp_hbfnum         <= '0';
-        if(empty_rx_fifo = '0') then
-          re_rx_fifo  <= '1';
-          state_rx    <= ParseFrame;
-        end if;
+        ghbf_is_valid       <= '0';
+        global_hbf_number   <= (others => '0');
+        global_frame_state  <= kIdleFrame;
+        state_rx            <= WaitRxIn;
+      else
+      case state_rx is
+        when WaitRxIn =>
+          grst_from_primary   <= '0';
+          comp_hbfnum         <= '0';
+          if(empty_rx_fifo = '0') then
+            re_rx_fifo  <= '1';
+            state_rx    <= ParseFrame;
+          end if;
 
-      when ParseFrame =>
-        re_rx_fifo  <= '0';
+        when ParseFrame =>
+          re_rx_fifo  <= '0';
 
-        if(rd_valid_rx_fifo = '1') then
-          if(isWrite(dout_rx_fifo(kPosCmd'range))) then
-            if(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrPrimaryReset) then
-              grst_from_primary   <= '1';
-            elsif(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrFrameInfo) then
-              ghbf_is_valid       <= hbc_is_synced;
-              global_hbf_number   <= dout_rx_fifo(kWidthHbfNum-1 downto 0);
-              global_frame_state  <= DecodeHbfState(dout_rx_fifo(kPosRegister'high downto kWidthHbfNum));
-              comp_hbfnum         <= '1';
+          if(rd_valid_rx_fifo = '1') then
+            if(isWrite(dout_rx_fifo(kPosCmd'range))) then
+              if(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrPrimaryReset) then
+                grst_from_primary   <= '1';
+              elsif(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrFrameInfo) then
+                ghbf_is_valid       <= hbc_is_synced;
+                global_hbf_number   <= dout_rx_fifo(kWidthHbfNum-1 downto 0);
+                global_frame_state  <= DecodeHbfState(dout_rx_fifo(kPosRegister'high downto kWidthHbfNum));
+                comp_hbfnum         <= '1';
+              else
+                -- This frame is not for me --
+                null;
+              end if;
             else
               -- This frame is not for me --
               null;
             end if;
-          else
-            -- This frame is not for me --
-            null;
+
+            state_rx  <= WaitRxIn;
           end if;
 
+        when others =>
           state_rx  <= WaitRxIn;
-        end if;
-
-      when others =>
-        state_rx  <= WaitRxIn;
 
 
       end case;
+      end if;
     end if;
   end process;
 
@@ -300,12 +312,10 @@ begin
 
   -- Reset sequence --
   sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
+  u_sync_reset : process(clk)
   begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
+    if(clk'event and clk = '1') then
+      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & rst;
     end if;
   end process;
 

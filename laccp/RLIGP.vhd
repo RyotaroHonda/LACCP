@@ -14,7 +14,7 @@ entity RLIGP is
   port
     (
       -- System --
-      rst               : in std_logic; -- Asynchronous, Active high
+      syncReset         : in std_logic; --  Active high
       clk               : in std_logic;
 
       -- User Interface --
@@ -38,9 +38,6 @@ architecture RTL of RLIGP is
   attribute mark_debug  : boolean;
 
   -- System --
-  signal sync_reset           : std_logic;
-  constant kWidthResetSync    : integer:= 16;
-  signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
   -- Internal signal decralation --
   constant kWidthResend : integer:= 28;
@@ -97,7 +94,7 @@ begin
       kRegisterOut  => false
       )
     port map(
-      rst       => sync_reset,
+      rst       => syncReset,
       clk       => clk,
       wrEn      => validBusIn,
       rdEn      => re_rx_fifo,
@@ -110,191 +107,184 @@ begin
       );
 
 
-  u_rxfsm : process(clk, sync_reset)
+  u_rxfsm : process(clk)
   begin
-    if(sync_reset = '1') then
-      validPartnerLink    <= '0';
-      re_rx_fifo          <= '0';
-      reg_tx_req(kReply)  <= '0';
-      got_reply           <= (others => '0');
-      state_rx            <= WaitRxIn;
-    elsif(clk'event and clk = '1') then
-    case state_rx is
-      when WaitRxIn =>
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
+        validPartnerLink    <= '0';
+        re_rx_fifo          <= '0';
         reg_tx_req(kReply)  <= '0';
-        if(empty_rx_fifo = '0') then
-          re_rx_fifo  <= '1';
-          state_rx          <= ParseFrame;
-        end if;
+        got_reply           <= (others => '0');
+        state_rx            <= WaitRxIn;
+      else
+      case state_rx is
+        when WaitRxIn =>
+          reg_tx_req(kReply)  <= '0';
+          if(empty_rx_fifo = '0') then
+            re_rx_fifo  <= '1';
+            state_rx          <= ParseFrame;
+          end if;
 
-      when ParseFrame =>
-        re_rx_fifo  <= '0';
+        when ParseFrame =>
+          re_rx_fifo  <= '0';
 
-        if(rd_valid_rx_fifo = '1') then
-          if(isWrite(dout_rx_fifo(kPosCmd'range))) then
-            if(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrLinkAddress) then
-              reg_frame_rx      <= dout_rx_fifo;
-              addrPartnerLink   <= dout_rx_fifo(kPosRegister'range);
-              validPartnerLink  <= '1';
-              state_rx          <= CheckReplyReq;
+          if(rd_valid_rx_fifo = '1') then
+            if(isWrite(dout_rx_fifo(kPosCmd'range))) then
+              if(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrLinkAddress) then
+                reg_frame_rx      <= dout_rx_fifo;
+                addrPartnerLink   <= dout_rx_fifo(kPosRegister'range);
+                validPartnerLink  <= '1';
+                state_rx          <= CheckReplyReq;
+              else
+                -- This frame is not for me --
+                state_rx  <= WaitRxIn;
+              end if;
+            elsif(isReply(dout_rx_fifo(kPosCmd'range))) then
+              reg_frame_rx  <= dout_rx_fifo;
+              state_rx      <= ParseReply;
             else
               -- This frame is not for me --
               state_rx  <= WaitRxIn;
             end if;
-          elsif(isReply(dout_rx_fifo(kPosCmd'range))) then
-            reg_frame_rx  <= dout_rx_fifo;
-            state_rx      <= ParseReply;
+          end if;
+
+        -- From Write Command --
+        when CheckReplyReq =>
+          if('1' = reg_frame_rx(kPosCmd'low + kCmdReplyRequest)) then
+            state_rx  <= ReplyProcess;
           else
-            -- This frame is not for me --
             state_rx  <= WaitRxIn;
           end if;
-        end if;
 
-      -- From Write Command --
-      when CheckReplyReq =>
-        if('1' = reg_frame_rx(kPosCmd'low + kCmdReplyRequest)) then
-          state_rx  <= ReplyProcess;
-        else
+        when ReplyProcess =>
+          if(reg_frame_rx(kPosDestModAddr'range)   = kAddrRLIGP and
+            reg_frame_rx(kPosDestLocalAddr'range) = kAddrLinkAddress) then
+            reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRLIGP;
+            reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrLinkAddress;
+            reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRLIGP;
+            reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrLinkAddress;
+            reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                            GenCmdVect(kCmdReply);
+            reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
+            reg_frame_tx(kReply)(kPosRegister'range)      <= (others => '0');
+            reg_tx_req(kReply)                            <= '1';
+            state_rx                                      <= WaitInternalAck;
+          end if;
+
+        when WaitInternalAck =>
+          if(reg_tx_ack(kReply) = '1') then
+            reg_tx_req(kReply)  <= '0';
+            state_rx            <= WaitRxIn;
+          end if;
+
+        -- From Reply Command --
+        when ParseReply =>
+          if(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRLIGP and
+            reg_frame_rx(kPosSrcLocalAddr'range) = kAddrLinkAddress) then
+              got_reply(kMyAddr)  <= '1';
+          end if;
           state_rx  <= WaitRxIn;
-        end if;
 
-      when ReplyProcess =>
-        if(reg_frame_rx(kPosDestModAddr'range)   = kAddrRLIGP and
-           reg_frame_rx(kPosDestLocalAddr'range) = kAddrLinkAddress) then
-          reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRLIGP;
-          reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrLinkAddress;
-          reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRLIGP;
-          reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrLinkAddress;
-          reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
-                                                           GenCmdVect(kCmdReply);
-          reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
-          reg_frame_tx(kReply)(kPosRegister'range)      <= (others => '0');
-          reg_tx_req(kReply)                            <= '1';
-          state_rx                                      <= WaitInternalAck;
-        end if;
-
-      when WaitInternalAck =>
-        if(reg_tx_ack(kReply) = '1') then
-          reg_tx_req(kReply)  <= '0';
-          state_rx            <= WaitRxIn;
-        end if;
-
-      -- From Reply Command --
-      when ParseReply =>
-        if(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRLIGP and
-           reg_frame_rx(kPosSrcLocalAddr'range) = kAddrLinkAddress) then
-            got_reply(kMyAddr)  <= '1';
-        end if;
-        state_rx  <= WaitRxIn;
-
-      when others =>
-        state_rx  <= WaitRxIn;
+        when others =>
+          state_rx  <= WaitRxIn;
 
 
-      end case;
+        end case;
+      end if;
     end if;
   end process;
 
 
   -- Tx Process ----------------------------------------------------------
-  u_intswith : process(clk, sync_reset)
+  u_intswith : process(clk)
   begin
-    if(sync_reset = '1') then
-      validBusOut   <= '0';
-      reg_tx_ack    <= (others => '0');
-      state_switch  <= TxIdle;
-    elsif(clk'event and clk = '1') then
-    case state_switch is
-      when TxIdle =>
-        validBusOut <= '0';
-        if(reg_tx_req(kWrite) = '1') then
-          reg_tx_ack(kWrite)  <= '1';
-          dataBusOut          <= reg_frame_tx(kWrite);
-          state_switch        <= SendFrame;
-        elsif(reg_tx_req(kReply) = '1') then
-          reg_tx_ack(kReply)  <= '1';
-          dataBusOut          <= reg_frame_tx(kReply);
-          state_switch        <= SendFrame;
-        end if;
-
-      when SendFrame =>
-        validBusOut   <= '1';
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
+        validBusOut   <= '0';
+        reg_tx_ack    <= (others => '0');
         state_switch  <= TxIdle;
+      else
+      case state_switch is
+        when TxIdle =>
+          validBusOut <= '0';
+          if(reg_tx_req(kWrite) = '1') then
+            reg_tx_ack(kWrite)  <= '1';
+            dataBusOut          <= reg_frame_tx(kWrite);
+            state_switch        <= SendFrame;
+          elsif(reg_tx_req(kReply) = '1') then
+            reg_tx_ack(kReply)  <= '1';
+            dataBusOut          <= reg_frame_tx(kReply);
+            state_switch        <= SendFrame;
+          end if;
 
-      when others =>
-        state_switch  <= TxIdle;
+        when SendFrame =>
+          validBusOut   <= '1';
+          state_switch  <= TxIdle;
 
-    end case;
+        when others =>
+          state_switch  <= TxIdle;
+
+      end case;
+      end if;
     end if;
   end process;
 
 
-  u_txfsm : process(clk, sync_reset)
+  u_txfsm : process(clk)
     variable resend_counter : std_logic_vector(kWidthResend-1 downto 0);
   begin
-    if(sync_reset = '1') then
-      reg_tx_req(kWrite)  <= '0';
-      resend_counter      := (others => '1');
-      state_tx            <= TxIdle;
-    elsif(clk'event and clk = '1') then
-    case state_tx is
-      when TxIdle =>
-        if(validMyLink = '1') then
-          reg_addr_my_link  <= addrMyLink;
-          state_tx          <= SetAddress;
-        end if;
-
-      when SetAddress =>
-        reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRLIGP;
-        reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrLinkAddress;
-        reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRLIGP;
-        reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrLinkAddress;
-        reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
-                                                         GenCmdVect(kCmdWrite) or
-                                                         GenCmdVect(kCmdReplyRequest);
-        reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
-        reg_frame_tx(kWrite)(kPosRegister'range)      <= reg_addr_my_link;
-        reg_tx_req(kWrite)                            <= '1';
-        state_tx                                      <= WaitInternalAck;
-
-      when WaitInternalAck =>
-        if(reg_tx_ack(kWrite) = '1') then
-          resend_counter      := (others => '1');
-          reg_tx_req(kWrite)  <= '0';
-          state_tx            <= WaitReply;
-        end if;
-
-      when WaitReply =>
-        if(got_reply(kMyAddr) = '1') then
-          state_tx  <= Done;
-        else
-          if(to_integer(unsigned(resend_counter)) = 0) then
-            state_tx  <= TxIdle;
-          else
-            resend_counter  := std_logic_vector(unsigned(resend_counter) -1);
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
+        reg_tx_req(kWrite)  <= '0';
+        resend_counter      := (others => '1');
+        state_tx            <= TxIdle;
+      else
+      case state_tx is
+        when TxIdle =>
+          if(validMyLink = '1') then
+            reg_addr_my_link  <= addrMyLink;
+            state_tx          <= SetAddress;
           end if;
-        end if;
 
-      when Done =>
-        null;
+        when SetAddress =>
+          reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRLIGP;
+          reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrLinkAddress;
+          reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRLIGP;
+          reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrLinkAddress;
+          reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                          GenCmdVect(kCmdWrite) or
+                                                          GenCmdVect(kCmdReplyRequest);
+          reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
+          reg_frame_tx(kWrite)(kPosRegister'range)      <= reg_addr_my_link;
+          reg_tx_req(kWrite)                            <= '1';
+          state_tx                                      <= WaitInternalAck;
 
-      when others =>
-        state_tx  <= TxIdle;
+        when WaitInternalAck =>
+          if(reg_tx_ack(kWrite) = '1') then
+            resend_counter      := (others => '1');
+            reg_tx_req(kWrite)  <= '0';
+            state_tx            <= WaitReply;
+          end if;
 
-    end case;
-    end if;
-  end process;
+        when WaitReply =>
+          if(got_reply(kMyAddr) = '1') then
+            state_tx  <= Done;
+          else
+            if(to_integer(unsigned(resend_counter)) = 0) then
+              state_tx  <= TxIdle;
+            else
+              resend_counter  := std_logic_vector(unsigned(resend_counter) -1);
+            end if;
+          end if;
 
+        when Done =>
+          null;
 
+        when others =>
+          state_tx  <= TxIdle;
 
-  -- Reset sequence --
-  sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
-  begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
+      end case;
+      end if;
     end if;
   end process;
 

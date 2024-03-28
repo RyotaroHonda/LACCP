@@ -15,7 +15,7 @@ entity LaccpFrameRx is
   port
     (
       -- System --
-      rst             : in std_logic; -- Asynchronous, Active high
+      syncReset       : in std_logic; -- Active high
       clk             : in std_logic;
 
       -- LACCP --
@@ -41,9 +41,6 @@ architecture RTL of LaccpFrameRx is
   attribute mark_debug  : boolean;
 
   -- System --
-  signal sync_reset           : std_logic;
-  constant kWidthResetSync    : integer:= 16;
-  signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
   -- Internal signal decralation --
   -- Buffer --
@@ -94,10 +91,10 @@ begin
   end process;
 
   -- Frame Rx --------------------------------------------------------
-  u_frame_rx : process(clk, sync_reset)
+  u_frame_rx : process(clk, syncReset)
     variable index : integer range -1 to kLaccpFrameLength;
   begin
-    if(sync_reset = '1') then
+    if(syncReset = '1') then
       index                 := kLaccpFrameLength-1;
       unexpected_preamble   <= '0';
       invalid_frame_length  <= '0';
@@ -161,17 +158,6 @@ begin
 
     end case;
 
-    end if;
-  end process;
-
-  -- Reset sequence --
-  sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
-  begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
     end if;
   end process;
 

@@ -98,6 +98,11 @@ architecture RTL of LaccpMainBlock is
 
   -- System --
   signal laccp_reset    : std_logic;
+  constant kWidthResetSync    : integer:= 16;
+  signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
+
+  attribute async_reg : string;
+  attribute async_reg of u_sync_reset : label is "true";
 
   -- Internal signal decralation --
   -- MIKUMARI pulse --
@@ -172,8 +177,6 @@ begin
 
   validOffset   <= valid_offset;
 
-  laccp_reset <= rst or (not mikuLinkUpIn);
-
   -- Protocols -------------------------------------------------------
   u_RLIGP : entity mylib.RLIGP
     generic map
@@ -183,7 +186,7 @@ begin
     port map
       (
         -- System --
-        rst               => laccp_reset,
+        syncReset         => laccp_reset,
         clk               => clk,
 
         -- User Interface --
@@ -213,7 +216,7 @@ begin
     port map
       (
         -- System --
-        rst               => laccp_reset,
+        syncReset         => laccp_reset,
         clk               => clk,
 
         -- User Interface --
@@ -302,7 +305,7 @@ begin
     port map
       (
         -- System --
-        rst             => laccp_reset,
+        syncReset       => laccp_reset,
         clk             => clk,
 
         -- LACCP --
@@ -328,7 +331,7 @@ begin
     port map
       (
         -- System --
-        rst             => laccp_reset,
+        syncReset       => laccp_reset,
         clk             => clk,
 
         -- LACCP --
@@ -378,7 +381,7 @@ begin
     port map
       (
         -- System --
-        rst             => laccp_reset,
+        syncReset       => laccp_reset,
         clk             => clk,
 
         -- Bus ports --
@@ -390,5 +393,14 @@ begin
         validBusOut     => valid_bus_out
 
       );
+
+  -- Reset sequence --
+  laccp_reset  <= reset_shiftreg(kWidthResetSync-1);
+  u_sync_reset : process(clk)
+  begin
+    if(clk'event and clk = '1') then
+      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & (rst or (not mikuLinkUpIn));
+    end if;
+  end process;
 
 end RTL;

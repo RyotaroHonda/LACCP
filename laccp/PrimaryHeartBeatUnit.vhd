@@ -49,6 +49,9 @@ architecture RTL of PrimaryHeartBeatUnit is
   constant kWidthResetSync    : integer:= 16;
   signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
+  attribute async_reg : string;
+  attribute async_reg of u_sync_reset : label is "true";
+
   -- Internal signal decralation --
   signal heartbeat_signal, backbeat_signal  : std_logic;
   constant kMaxCount          : std_logic_vector(heartbeatCount'range):= (others => '1');
@@ -86,17 +89,19 @@ begin
   frameState      <= frame_state;
 
   -- HeartBeat -----------------------------------------------------------
-  u_counter : process(sync_reset, clk)
+  u_counter : process(clk)
   begin
-    if(sync_reset = '1') then
-      hb_counter  <= (others => '0');
-    elsif(clk'event and clk = '1') then
-      if(primaryRst = '1' and frame_state = kIdleFrame) then
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
         hb_counter  <= (others => '0');
       else
-        hb_counter  <= std_logic_vector(unsigned(hb_counter) +1);
-      end if;
+        if(primaryRst = '1' and frame_state = kIdleFrame) then
+          hb_counter  <= (others => '0');
+        else
+          hb_counter  <= std_logic_vector(unsigned(hb_counter) +1);
+        end if;
 
+      end if;
     end if;
   end process;
 
@@ -114,34 +119,38 @@ begin
     end if;
   end process;
 
-  u_hbf : process(sync_reset, clk)
+  u_hbf : process(clk)
   begin
-    if(sync_reset = '1') then
-      local_hbf_number   <= (others => '0');
-    elsif(clk'event and clk = '1') then
-      if(primaryRst = '1' and frame_state = kIdleFrame) then
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
         local_hbf_number   <= (others => '0');
-      elsif(heartbeat_signal = '1') then
-        local_hbf_number   <= std_logic_vector(unsigned(local_hbf_number) +1);
       else
-        null;
+        if(primaryRst = '1' and frame_state = kIdleFrame) then
+          local_hbf_number   <= (others => '0');
+        elsif(heartbeat_signal = '1') then
+          local_hbf_number   <= std_logic_vector(unsigned(local_hbf_number) +1);
+        else
+          null;
+        end if;
       end if;
     end if;
   end process;
 
   -- DAQ state -----------------------------------------------------------
-  u_framestate : process(sync_reset, clk)
+  u_framestate : process(clk)
   begin
-    if(sync_reset = '1') then
-      frame_state   <= kIdleFrame;
-    elsif(clk'event and clk = '1') then
-      if(forceOn = '1') then
-        frame_state <= kActiveFrame;
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
+        frame_state   <= kIdleFrame;
       else
-        if(backbeat_signal = '1' and hbfCtrlGateIn = '1') then
-          frame_state   <= kActiveFrame;
-        elsif(backbeat_signal = '1' and hbfCtrlGateIn = '0') then
-          frame_state   <= kIdleFrame;
+        if(forceOn = '1') then
+          frame_state <= kActiveFrame;
+        else
+          if(backbeat_signal = '1' and hbfCtrlGateIn = '1') then
+            frame_state   <= kActiveFrame;
+          elsif(backbeat_signal = '1' and hbfCtrlGateIn = '0') then
+            frame_state   <= kIdleFrame;
+          end if;
         end if;
       end if;
     end if;
@@ -153,55 +162,57 @@ begin
   -- Nothing to do
 
   -- Tx Process ----------------------------------------------------------
-  u_txfsm : process(clk, rst)
+  u_txfsm : process(clk)
   begin
-    if(sync_reset = '1') then
-      validBusOut <= '0';
-      state_tx    <= TxIdle;
-    elsif(clk'event and clk = '1') then
-    case state_tx is
-      when TxIdle =>
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1') then
         validBusOut <= '0';
-        if(backbeat_signal = '1') then
-          state_tx          <= SetHbfInfo;
-        elsif(primaryRst = '1' and frame_state = kIdleFrame) then
-          state_tx          <= SetPrimaryReset;
-        end if;
+        state_tx    <= TxIdle;
+      else
+      case state_tx is
+        when TxIdle =>
+          validBusOut <= '0';
+          if(backbeat_signal = '1') then
+            state_tx          <= SetHbfInfo;
+          elsif(primaryRst = '1' and frame_state = kIdleFrame) then
+            state_tx          <= SetPrimaryReset;
+          end if;
 
-      when SetHbfInfo =>
-        reg_frame_tx(kPosDestModAddr'range)   <= kAddrHBU;
-        reg_frame_tx(kPosDestLocalAddr'range) <= kAddrFrameInfo;
-        reg_frame_tx(kPosSrcModAddr'range)    <= kAddrHBU;
-        reg_frame_tx(kPosSrcLocalAddr'range)  <= kAddrFrameInfo;
-        reg_frame_tx(kPosCmd'range)           <= GenCmdVect(kCmdPassagePermission) or
-                                                 GenCmdVect(kCmdDepature) or
-                                                 GenCmdVect(kCmdWrite);
-        reg_frame_tx(kPosRsv'range)           <= (others => '0');
-        reg_frame_tx(kPosRegister'range)      <= EncodeHbfState(frame_state) & local_hbf_number;
-        state_tx                              <= SendFrame;
+        when SetHbfInfo =>
+          reg_frame_tx(kPosDestModAddr'range)   <= kAddrHBU;
+          reg_frame_tx(kPosDestLocalAddr'range) <= kAddrFrameInfo;
+          reg_frame_tx(kPosSrcModAddr'range)    <= kAddrHBU;
+          reg_frame_tx(kPosSrcLocalAddr'range)  <= kAddrFrameInfo;
+          reg_frame_tx(kPosCmd'range)           <= GenCmdVect(kCmdPassagePermission) or
+                                                  GenCmdVect(kCmdDepature) or
+                                                  GenCmdVect(kCmdWrite);
+          reg_frame_tx(kPosRsv'range)           <= (others => '0');
+          reg_frame_tx(kPosRegister'range)      <= EncodeHbfState(frame_state) & local_hbf_number;
+          state_tx                              <= SendFrame;
 
-      when SetPrimaryReset =>
-        reg_frame_tx(kPosDestModAddr'range)   <= kBroadCast;
-        reg_frame_tx(kPosDestLocalAddr'range) <= kAddrPrimaryReset;
-        reg_frame_tx(kPosSrcModAddr'range)    <= kAddrHBU;
-        reg_frame_tx(kPosSrcLocalAddr'range)  <= kAddrPrimaryReset;
-        reg_frame_tx(kPosCmd'range)           <= GenCmdVect(kCmdPassagePermission) or
-                                                 GenCmdVect(kCmdDepature) or
-                                                 GenCmdVect(kCmdWrite);
-        reg_frame_tx(kPosRsv'range)           <= (others => '0');
-        reg_frame_tx(kPosRegister'range)      <= (others => '0');
-        state_tx                              <= SendFrame;
+        when SetPrimaryReset =>
+          reg_frame_tx(kPosDestModAddr'range)   <= kBroadCast;
+          reg_frame_tx(kPosDestLocalAddr'range) <= kAddrPrimaryReset;
+          reg_frame_tx(kPosSrcModAddr'range)    <= kAddrHBU;
+          reg_frame_tx(kPosSrcLocalAddr'range)  <= kAddrPrimaryReset;
+          reg_frame_tx(kPosCmd'range)           <= GenCmdVect(kCmdPassagePermission) or
+                                                  GenCmdVect(kCmdDepature) or
+                                                  GenCmdVect(kCmdWrite);
+          reg_frame_tx(kPosRsv'range)           <= (others => '0');
+          reg_frame_tx(kPosRegister'range)      <= (others => '0');
+          state_tx                              <= SendFrame;
 
 
-      when SendFrame =>
-        dataBusOut                          <= reg_frame_tx;
-        validBusOut                         <= '1';
-        state_tx                            <= TxIdle;
+        when SendFrame =>
+          dataBusOut                          <= reg_frame_tx;
+          validBusOut                         <= '1';
+          state_tx                            <= TxIdle;
 
-      when others =>
-        state_tx  <= TxIdle;
+        when others =>
+          state_tx  <= TxIdle;
 
-    end case;
+      end case;
+      end if;
     end if;
   end process;
 
@@ -209,12 +220,10 @@ begin
 
   -- Reset sequence --
   sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
+  u_sync_reset : process(clk)
   begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
+    if(clk'event and clk = '1') then
+      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & rst;
     end if;
   end process;
 

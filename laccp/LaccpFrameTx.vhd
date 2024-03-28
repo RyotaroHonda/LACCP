@@ -15,7 +15,7 @@ entity LaccpFrameTx is
   port
     (
       -- System --
-      rst             : in std_logic; -- Asynchronous, Active high
+      syncReset       : in std_logic; -- Active high
       clk             : in std_logic;
 
       -- LACCP --
@@ -38,9 +38,6 @@ architecture RTL of LaccpFrameTx is
   attribute mark_debug  : boolean;
 
   -- System --
-  signal sync_reset           : std_logic;
-  constant kWidthResetSync    : integer:= 16;
-  signal reset_shiftreg       : std_logic_vector(kWidthResetSync-1 downto 0);
 
   -- Internal signal decralation --
   type LaccpFrameTxType is array (kLaccpFrameLength-1 downto 0) of std_logic_vector(kFramePreamble'range);
@@ -74,7 +71,7 @@ begin
     kRegisterOut  => false
     )
   port map(
-    rst       => sync_reset,
+    rst       => syncReset,
     clk       => clk,
     wrEn      => weFrameData,
     rdEn      => re_tx_fifo,
@@ -87,69 +84,59 @@ begin
     );
 
   -- Frame TX --------------------------------------------------------
-  u_frame_tx : process(clk, sync_reset)
+  u_frame_tx : process(clk)
     variable index : integer range -1 to kLaccpFrameLength+1;
   begin
-    if(sync_reset = '1') then
-      re_tx_fifo    <= '0';
-      validTx       <= '0';
-      frameLastTx   <= '0';
-      index         := kLaccpFrameLength-1;
-      state_tx      <= WaitTxIn;
-
-    elsif(clk'event and clk = '1') then
-    case state_tx is
-      when WaitTxIn =>
-        validTx         <= '0';
-        frameLastTx     <= '0';
-        if(empty_tx_fifo = '0') then
-          re_tx_fifo  <= '1';
-          state_tx    <= SetFrameData;
-        end if;
-
-      when SetFrameData =>
+    if(clk'event and clk = '1') then
+      if(syncReset = '1') then
         re_tx_fifo    <= '0';
-        if(rd_valid_tx_fifo = '1') then
-          frame_data(kLaccpFrameLength-1)  <= kFramePreamble;
-          for i in 0 to kLaccpFrameLength-2 loop
-            frame_data(i)   <= dout_tx_fifo((i+1)*dataTx'length-1 downto i*dataTx'length);
-          end loop;
-
-          index     := kLaccpFrameLength-1;
-          state_tx  <= SendFrameData;
-        end if;
-
-      when SendFrameData =>
-        if(txAck = '1') then
-          if(index = 0) then
-            validTx   <= '0';
-            state_tx  <= WaitTxIn;
-          else
-            index   := index -1;
-          end if;
-        else
-          validTx <= '1';
-          frameLastTx   <= kRegLast(index);
-          dataTx        <= frame_data(index);
-        end if;
-
-      when others =>
+        validTx       <= '0';
+        frameLastTx   <= '0';
+        index         := kLaccpFrameLength-1;
         state_tx      <= WaitTxIn;
+      else
+      case state_tx is
+        when WaitTxIn =>
+          validTx         <= '0';
+          frameLastTx     <= '0';
+          if(empty_tx_fifo = '0') then
+            re_tx_fifo  <= '1';
+            state_tx    <= SetFrameData;
+          end if;
 
-    end case;
+        when SetFrameData =>
+          re_tx_fifo    <= '0';
+          if(rd_valid_tx_fifo = '1') then
+            frame_data(kLaccpFrameLength-1)  <= kFramePreamble;
+            for i in 0 to kLaccpFrameLength-2 loop
+              frame_data(i)   <= dout_tx_fifo((i+1)*dataTx'length-1 downto i*dataTx'length);
+            end loop;
 
+            index     := kLaccpFrameLength-1;
+            state_tx  <= SendFrameData;
+          end if;
+
+        when SendFrameData =>
+          if(txAck = '1') then
+            if(index = 0) then
+              validTx   <= '0';
+              state_tx  <= WaitTxIn;
+            else
+              index   := index -1;
+            end if;
+          else
+            validTx <= '1';
+            frameLastTx   <= kRegLast(index);
+            dataTx        <= frame_data(index);
+          end if;
+
+        when others =>
+          state_tx      <= WaitTxIn;
+
+      end case;
+      end if;
     end if;
   end process;
 
-  -- Reset sequence --
-  sync_reset  <= reset_shiftreg(kWidthResetSync-1);
-  u_sync_reset : process(rst, clk)
-  begin
-    if(rst = '1') then
-      reset_shiftreg  <= (others => '1');
-    elsif(clk'event and clk = '1') then
-      reset_shiftreg  <= reset_shiftreg(kWidthResetSync-2 downto 0) & '0';
-    end if;
-  end process;
 
 end RTL;
