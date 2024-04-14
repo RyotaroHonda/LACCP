@@ -126,11 +126,15 @@ architecture RTL of RCAP is
   signal wait_reply       : std_logic_vector(kNumReplyPath-1 downto 0);
 
   -- Debug --
-  attribute mark_debug  of secondary_is_ready   : signal is enDebug;
-  attribute mark_debug  of reg_round_trip_time  : signal is enDebug;
-  attribute mark_debug  of reg_hbc_offset       : signal is enDebug;
-  attribute mark_debug  of reg_valid_offset     : signal is enDebug;
-  attribute mark_debug  of is_done              : signal is enDebug;
+  attribute mark_debug  of secondary_is_ready       : signal is enDebug;
+  attribute mark_debug  of reg_round_trip_time      : signal is enDebug;
+  attribute mark_debug  of reg_hbc_offset           : signal is enDebug;
+  attribute mark_debug  of reg_valid_offset         : signal is enDebug;
+  attribute mark_debug  of valid_modified_offset    : signal is enDebug;
+  attribute mark_debug  of valid_accumulated_offset : signal is enDebug;
+  attribute mark_debug  of is_done                  : signal is enDebug;
+  attribute mark_debug  of state_rx                 : signal is enDebug;
+  attribute mark_debug  of state_tx                 : signal is enDebug;
 
 
 begin
@@ -205,7 +209,7 @@ begin
           valid_modified_offset     <= '0';
           valid_accumulated_offset  <= '0';
         else
-          if(reg_valid_fineoffset = '1' and reg_valid_offset = '1') then
+          if(reg_valid_fineoffset = '1' and reg_valid_offset = '1' and valid_modified_offset = '0') then
             tmp_fine_offset := reg_fine_offset + semi_fine_offset;
             if(tmp_fine_offset > kPlusCycle) then
               modified_fine_offset  <= tmp_fine_offset - kPlusCycle;
@@ -218,7 +222,7 @@ begin
             valid_modified_offset   <= '1';
           end if;
 
-          if(valid_modified_offset = '1') then
+          if(valid_modified_offset = '1' and valid_accumulated_offset = '0') then
             tmp2_fine_offset  := modified_fine_offset + upstream_fine_offset;
             if(tmp2_fine_offset > kPlusCycle) then
               accumulated_offset    <= tmp2_fine_offset - kPlusCycle;
