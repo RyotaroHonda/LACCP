@@ -78,7 +78,7 @@ package defLaccp is
   -- Down pulses --
   constant kDownPulseTrigger  : integer:= 0;
   constant kDownPulseCntRst   : integer:= 1;
-  constant kDownPulseRSV2     : integer:= 2;
+  constant kDownPulseSysRst   : integer:= 2;
   constant kDownPulseRSV3     : integer:= 3;
   constant kDownPulseRSV4     : integer:= 4;
   constant kDownPulseRSV5     : integer:= 5;
