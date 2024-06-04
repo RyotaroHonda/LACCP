@@ -82,6 +82,8 @@ begin
   end process;
 
   gen_srrt : if kInferBRAM = false generate
+    attribute ram_style : string;
+    attribute ram_style of u_ram  : label is "distributed";
   begin
     u_ram : entity mylib.MyDPRamSRRT
       generic map(

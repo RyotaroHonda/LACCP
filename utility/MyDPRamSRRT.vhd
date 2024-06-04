@@ -33,6 +33,9 @@ architecture syn of MyDPRamSRRT is
   signal read_a     : std_logic_vector(a'range):= (others=>'0');
   signal read_dpra  : std_logic_vector(a'range):= (others=>'0');
 
+  attribute ram_style : string;
+  attribute ram_style of RAM : signal is "distributed";
+
 begin
 
   process (clk)
