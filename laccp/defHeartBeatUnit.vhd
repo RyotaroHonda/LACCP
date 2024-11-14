@@ -20,6 +20,8 @@ package defHeartBeatUnit is
   function EncodeHbfState(state : HbfStateType) return std_logic_vector;
   function DecodeHbfState(vect  : std_logic_vector) return HbfStateType;
 
+  constant kWidthFrameFlag      : integer := 4;
+
 end package defHeartBeatUnit;
 -- ----------------------------------------------------------------------------------
 -- Package body
@@ -29,19 +31,19 @@ package body defHeartBeatUnit is
   function EncodeHbfState(state : HbfStateType) return std_logic_vector is
   begin
     if(state = kActiveFrame) then
-      return X"00";
+      return X"0";
     elsif(state = kIdleFrame) then
-      return X"01";
+      return X"1";
     else
-      return X"FF";
+      return X"F";
     end if;
   end EncodeHbfState;
 
   function DecodeHbfState(vect  : std_logic_vector) return HbfStateType is
   begin
     case vect is
-      when X"00" => return kActiveFrame;
-      when X"01" => return kIdleFrame;
+      when X"0" => return kActiveFrame;
+      when X"1" => return kIdleFrame;
       when others => return kIdleFrame;
     end case;
   end DecodeHbfState;

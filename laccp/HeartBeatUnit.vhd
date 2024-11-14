@@ -37,6 +37,9 @@ entity HeartBeatUnit is
       forceOn           : in std_logic; -- Valid only in stand-alone mode
       frameState        : out HbfStateType;
 
+      hbfFlagsIn        : in std_logic_vector(kWidthFrameFlag-1 downto 0);
+      frameFlags        : out std_logic_vector(kWidthFrameFlag-1 downto 0);
+
       -- LACCP Bus --
       dataBusIn         : in LaccpFrameBobyType;
       validBusIn        : in std_logic;
@@ -68,6 +71,9 @@ architecture RTL of HeartBeatUnit is
 
   signal frame_state                        : HbfStateType;
   signal global_frame_state                 : HbfStateType;
+
+  signal frame_flags                        : std_logic_vector(frameFlags'range);
+  signal global_frame_flags                 : std_logic_vector(frameFlags'range);
 
   signal grst_from_primary                  : std_logic;
 
@@ -114,6 +120,7 @@ begin
   hbfNumber       <= local_hbf_number;
   frameState      <= frame_state;
   hbfNumMismatch  <= reg_hbfnum_mismatch;
+  frameFlags      <= frame_flags;
 
   -- HeartBeat -----------------------------------------------------------
   u_counter : process(clk)
@@ -205,6 +212,7 @@ begin
     if(clk'event and clk = '1') then
       if(sync_reset = '1') then
         frame_state   <= kIdleFrame;
+        frame_flags   <= (others = "0");
       else
         if(enStandAlone = '1') then
           -- Stand-alone mode --
@@ -217,10 +225,15 @@ begin
               frame_state   <= kIdleFrame;
             end if;
           end if;
+
+          if(backbeat_signal = '1') then
+            frame_flags <= hbfFlagsIn;
+          end if;
         else
           -- Synchronized mode --
           if(comp_hbfnum = '1') then
             frame_state <= global_frame_state;
+            frame_flags <= global_frame_flags;
           end if;
         end if;
       end if;
@@ -262,6 +275,7 @@ begin
         ghbf_is_valid       <= '0';
         global_hbf_number   <= (others => '0');
         global_frame_state  <= kIdleFrame;
+        global_frame_flags  <= (others => '0');
         state_rx            <= WaitRxIn;
       else
       case state_rx is
@@ -283,7 +297,8 @@ begin
               elsif(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrFrameInfo) then
                 ghbf_is_valid       <= hbc_is_synced;
                 global_hbf_number   <= dout_rx_fifo(kWidthHbfNum-1 downto 0);
-                global_frame_state  <= DecodeHbfState(dout_rx_fifo(kPosRegister'high downto kWidthHbfNum));
+                global_frame_flags  <= dout_rx_fifo(kWidthFrameFlag-1 + kWidthHbfNum downto kWidthHbfNum);
+                global_frame_state  <= DecodeHbfState(dout_rx_fifo(kPosRegister'high downto kWidthFrameFlag+kWidthHbfNum));
                 comp_hbfnum         <= '1';
               else
                 -- This frame is not for me --

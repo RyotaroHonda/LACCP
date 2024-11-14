@@ -31,6 +31,9 @@ entity PrimaryHeartBeatUnit is
       forceOn           : in std_logic;
       frameState        : out HbfStateType;
 
+      hbfFlagsIn        : in std_logic_vector(kWidthFrameFlag-1 downto 0);
+      frameFlags        : out std_logic_vector(kWidthFrameFlag-1 downto 0);
+
       -- LACCP Bus --
       dataBusIn         : in LaccpFrameBobyType;
       validBusIn        : in std_logic;
@@ -61,6 +64,7 @@ architecture RTL of PrimaryHeartBeatUnit is
 
 
   signal frame_state                        : HbfStateType;
+  signal frame_flags                        : std_logic_vector(hbfFlagsIn'range);
 
   -- FSMs --
   type TxProcessType is (TxIdle, SetHbfInfo, SetPrimaryReset, SendFrame);
@@ -75,6 +79,7 @@ architecture RTL of PrimaryHeartBeatUnit is
   attribute mark_debug of hb_counter        : signal is enDebug;
   attribute mark_debug of local_hbf_number  : signal is enDebug;
   attribute mark_debug of frame_state       : signal is enDebug;
+  attribute mark_debug of frame_flags       : signal is enDebug;
 
 
 begin
@@ -87,6 +92,7 @@ begin
   heartbeatCount  <= hb_counter;
   hbfNumber       <= local_hbf_number;
   frameState      <= frame_state;
+  frameFlags      <= frame_flags;
 
   -- HeartBeat -----------------------------------------------------------
   u_counter : process(clk)
@@ -142,6 +148,7 @@ begin
     if(clk'event and clk = '1') then
       if(sync_reset = '1') then
         frame_state   <= kIdleFrame;
+        frame_flags   <= (others => '0');
       else
         if(forceOn = '1') then
           frame_state <= kActiveFrame;
@@ -151,6 +158,10 @@ begin
           elsif(backbeat_signal = '1' and hbfCtrlGateIn = '0') then
             frame_state   <= kIdleFrame;
           end if;
+        end if;
+
+        if(backbeat_signal = '1') then
+          frame_flags <= hbfFlagsIn;
         end if;
       end if;
     end if;
