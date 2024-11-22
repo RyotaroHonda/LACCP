@@ -212,7 +212,7 @@ begin
     if(clk'event and clk = '1') then
       if(sync_reset = '1') then
         frame_state   <= kIdleFrame;
-        frame_flags   <= (others = "0");
+        frame_flags   <= (others => "0");
       else
         if(enStandAlone = '1') then
           -- Stand-alone mode --
