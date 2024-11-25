@@ -148,7 +148,7 @@ begin
     if(clk'event and clk = '1') then
       if(hb_counter = kMaxCount and (hbc_is_synced = '1' or enStandAlone = '1')) then
         heartbeat_signal  <= '1';
-      elsif(hb_counter = kHalfCount and (hbc_is_synced = '1' and enStandAlone = '1')) then
+      elsif(hb_counter = kHalfCount and (hbc_is_synced = '1' or enStandAlone = '1')) then
         backbeat_signal   <= '1';
       else
         heartbeat_signal  <= '0';
@@ -212,7 +212,7 @@ begin
     if(clk'event and clk = '1') then
       if(sync_reset = '1') then
         frame_state   <= kIdleFrame;
-        frame_flags   <= (others => "0");
+        frame_flags   <= (others => '0');
       else
         if(enStandAlone = '1') then
           -- Stand-alone mode --

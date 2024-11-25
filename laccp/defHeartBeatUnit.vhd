@@ -20,7 +20,7 @@ package defHeartBeatUnit is
   function EncodeHbfState(state : HbfStateType) return std_logic_vector;
   function DecodeHbfState(vect  : std_logic_vector) return HbfStateType;
 
-  constant kWidthFrameFlag      : integer := 4;
+  constant kWidthFrameFlag      : integer := 2;
 
 end package defHeartBeatUnit;
 -- ----------------------------------------------------------------------------------
