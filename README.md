@@ -8,7 +8,8 @@ User guide is under preparation.
 
 ## Test condition
 
-The current version CBT contains ISERDESE2, OSERDESE2, and IDELAYE2 primitives. Only the AMD 7-series FPGAs are supported.
+This protocol is an upper layer protocol of the MIKUMARI link protocol in which ISERDESE2, OSERDESE2, and IDELAYE2 primitives are utilized.
+Currently, the LACCP supports AMD 7-series FPGAs.
 
 ## Installation
 
