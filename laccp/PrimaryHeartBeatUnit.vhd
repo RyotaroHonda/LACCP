@@ -198,7 +198,7 @@ begin
                                                   GenCmdVect(kCmdDepature) or
                                                   GenCmdVect(kCmdWrite);
           reg_frame_tx(kPosRsv'range)           <= (others => '0');
-          reg_frame_tx(kPosRegister'range)      <= EncodeHbfState(frame_state) & frame_flags & local_hbf_number;
+          reg_frame_tx(kPosRegister'range)      <= EncodeHbfState(frame_state) & "00" & frame_flags & local_hbf_number;
           state_tx                              <= SendFrame;
 
         when SetPrimaryReset =>
