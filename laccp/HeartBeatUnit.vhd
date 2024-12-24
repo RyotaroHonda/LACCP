@@ -298,7 +298,7 @@ begin
                 ghbf_is_valid       <= hbc_is_synced;
                 global_hbf_number   <= dout_rx_fifo(kWidthHbfNum-1 downto 0);
                 global_frame_flags  <= dout_rx_fifo(kWidthFrameFlag-1 + kWidthHbfNum downto kWidthHbfNum);
-                global_frame_state  <= DecodeHbfState(dout_rx_fifo(kPosRegister'high downto kWidthFrameFlag+kWidthHbfNum));
+                global_frame_state  <= DecodeHbfState(dout_rx_fifo(kPosRegister'high downto kPosRegister'high -kWidthFrameState+1));
                 comp_hbfnum         <= '1';
               else
                 -- This frame is not for me --
