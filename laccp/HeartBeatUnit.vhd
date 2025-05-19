@@ -31,6 +31,7 @@ entity HeartBeatUnit is
       heartbeatCount    : out std_logic_vector(kWidthHbCount-1 downto 0);
       hbfNumber         : out std_logic_vector(kWidthHbfNum-1 downto 0);
       hbfNumMismatch    : out std_logic; -- Invalid in stand-alone mode
+      clkDiv16          : out std_logic;
 
       -- DAQ I/F --
       hbfCtrlGateIn     : in std_logic; -- Valid only in stand-alone mode
@@ -77,6 +78,8 @@ architecture RTL of HeartBeatUnit is
 
   signal grst_from_primary                  : std_logic;
 
+  signal clk_div16                          : std_logic;
+
   -- Synchronization --
   signal hbc_is_synced, ghbf_is_valid, hbf_is_synced  : std_logic;
   signal reg_hbfnum_mismatch                          : std_logic;
@@ -121,6 +124,28 @@ begin
   frameState      <= frame_state;
   hbfNumMismatch  <= reg_hbfnum_mismatch;
   frameFlags      <= frame_flags;
+
+  clkDiv16        <= clk_div16;
+
+  -- Division 16 ---------------------------------------------------------
+
+  u_div16 : process(clk)
+    variable div_counter  : unsigned(3 downto 0):= (others => '0');
+  begin
+    if(clk'event and clk = '1') then
+      if(sync_reset = '1' or heartbeat_signal = '1') then
+        div_counter   := (others => '0');
+      else
+        div_counter   := div_counter +1;
+      end if;
+
+      if(div_counter(div_counter'left) = '1') then
+        clk_div16   <= '0';
+      else
+        clk_div16   <= '1';
+      end if;
+    end if;
+  end process;
 
   -- HeartBeat -----------------------------------------------------------
   u_counter : process(clk)
