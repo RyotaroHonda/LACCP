@@ -14,7 +14,8 @@ entity LaccpMainBlock is
       kPrimaryMode      : boolean:= false;
       kNumInterconnect  : integer:= 16;
       kFastClkFreq      : real:= 500.0;
-      enDebug           : boolean:= false
+      enDebug           : boolean:= false;
+      enCalibDelay      : boolean:= false
     );
   port
     (
@@ -37,8 +38,15 @@ entity LaccpMainBlock is
       -- RCAP --
       idelayTapIn       : in unsigned(kWidthTap-1 downto 0);
       serdesLantencyIn  : in signed(kWidthSerdesOffset-1 downto 0);
+      cntValueInitIn    : in std_logic_vector(kCNTVALUEbit-1 downto 0);
+      cntValueSlaveInitIn : in std_logic_vector(kCNTVALUEbit-1 downto 0);
       idelayTapOut      : out unsigned(kWidthTap-1 downto 0);
       serdesLantencyOut : out signed(kWidthSerdesOffset-1 downto 0);
+      cntValueInitOut   : out unsigned(kCNTVALUEbit-1 downto 0);
+      cntValueSlaveInitOut : out unsigned(kCNTVALUEbit-1 downto 0);
+      roundTripTime     : out std_logic_vector(kWidthHbCount-1 downto 0);
+      calibDelay        : in signed(kCalibDelayWidth-1 downto 0);
+      calibDelayOut     : out signed(kCalibDelayWidth-1 downto 0);
 
       hbuIsSyncedIn     : in std_logic;
       syncPulseIn       : in std_logic;
@@ -167,6 +175,15 @@ architecture RTL of LaccpMainBlock is
   signal valid_frame_rx, we_frame_data_tx : std_logic;
 
   -- Debug --
+  --add 2024/12/12
+  attribute mark_debug  of rcap_is_done           : signal is enDebug;
+  attribute mark_debug  of reg_pulse_vector_rx           : signal is enDebug;
+  attribute mark_debug  of merged_pulse_tx           : signal is enDebug;
+  attribute mark_debug  of busy_pulse_tx           : signal is enDebug;
+  attribute mark_debug  of type_vector_tx           : signal is enDebug;
+  attribute mark_debug  of pulse_tx_rejected           : signal is enDebug;
+  attribute mark_debug  of laccpPulsesOut           : signal is enDebug;
+  attribute mark_debug  of reg_pulse_tx           : signal is enDebug;
 
 begin
   -- =================================================================
@@ -211,7 +228,8 @@ begin
         kWidthOffset    => kWidthHbCount,
         kFastClkFreq    => kFastClkFreq,
         kPrimaryMode    => kPrimaryMode,
-        enDebug         => enDebug
+        enDebug         => enDebug,
+        enCalibDelay    => enCalibDelay
       )
     port map
       (
@@ -220,13 +238,22 @@ begin
         clk               => clk,
 
         -- User Interface --
-        idelayTapIn       => idelayTapIn,
-        serdesLantencyIn  => serdesLantencyIn,
-        idelayTapOut      => idelayTapOut,
-        serdesLantencyOut => serdesLantencyOut,
-
         isDone            => rcap_is_done,
         clockIsSyncedIn   => hbuIsSyncedIn,
+
+        idelayTapIn       => idelayTapIn,
+        serdesLantencyIn  => serdesLantencyIn,
+        cntValueInitIn    => cntValueInitIn,
+        cntValueSlaveInitIn => cntValueSlaveInitIn,
+        idelayTapOut      => idelayTapOut,
+        serdesLantencyOut => serdesLantencyOut,
+        cntValueInitOut => cntValueInitOut,
+        cntValueSlaveInitOut => cntValueSlaveInitOut,
+
+        calibDelay        => calibDelay,
+        calibDelayOut     => calibDelayOut,
+
+        roundTripTime     => roundTripTime,
 
         upstreamOffset    => upstreamOffset,
         validOffset       => valid_offset,

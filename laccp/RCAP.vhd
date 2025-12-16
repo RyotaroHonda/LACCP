@@ -13,7 +13,8 @@ entity RCAP is
       kWidthOffset    : integer:= 16;
       kFastClkFreq    : real:= 500.0; -- MHz
       kPrimaryMode    : boolean:= false;
-      enDebug         : boolean:= false
+      enDebug         : boolean:= false;
+      enCalibDelay    : boolean:= false
     );
   port
     (
@@ -27,8 +28,17 @@ entity RCAP is
 
       idelayTapIn       : in unsigned(kWidthTap-1 downto 0);
       serdesLantencyIn  : in signed(kWidthSerdesOffset-1 downto 0);
+      cntValueInitIn    : in std_logic_vector(kCNTVALUEbit-1 downto 0);
+      cntValueSlaveInitIn : in std_logic_vector(kCNTVALUEbit-1 downto 0);
       idelayTapOut      : out unsigned(kWidthTap-1 downto 0);
       serdesLantencyOut : out signed(kWidthSerdesOffset-1 downto 0);
+      cntValueInitOut   : out unsigned(kCNTVALUEbit-1 downto 0);
+      cntValueSlaveInitOut : out unsigned(kCNTVALUEbit-1 downto 0);
+
+      calibDelay        : in signed(kCalibDelayWidth-1 downto 0);
+      calibDelayOut     : out signed(kCalibDelayWidth-1 downto 0);
+
+      roundTripTime     : out std_logic_vector(kWidthOffset-1 downto 0);
 
       upstreamOffset    : in signed(kWidthLaccpFineOffset-1 downto 0);
       validOffset       : out std_logic;
@@ -87,13 +97,26 @@ architecture RTL of RCAP is
   signal secondary_is_ready   : std_logic;
   signal reg_offset_rx        : std_logic_vector(kPosRegister'range);
   signal req_send_fineoffset  : std_logic;
+  signal req_send_CNTVALUEOUT : std_logic;
 
   signal idelay_tap_rx        : unsigned(idelayTapIn'range);
   signal serdes_latency_rx    : signed(serdesLantencyIn'range);
 
+  signal cntvalueout_init_rx  : unsigned(cntValueInitIn'range);
+  signal cntvalueout_slaveinit_rx : unsigned(cntValueSlaveInitIn'range);
+  signal calibdelay_rx       : signed(CalibDelay'range);
+  signal calibdelay_result   : signed(kWidthLaccpFineOffset-1 downto 0);
+  signal dT_sec_US           : signed(kWidthLaccpFineOffset-1 downto 0);
+  signal dT_pri_US           : signed(kWidthLaccpFineOffset-1 downto 0);
+  signal is_ultrascale_sec       : std_logic;
+  signal is_ultrascale_pri       : std_logic;
+
+
+
   -- Local Address --
   constant kAddrDone        : std_logic_vector(kPosDestLocalAddr'length-1 downto 0):= X"0";
   constant kAddrFineOffset  : std_logic_vector(kPosDestLocalAddr'length-1 downto 0):= X"1";
+  constant kAddrCNTVALUEOUT : std_logic_vector(kPosDestLocalAddr'length-1 downto 0):= X"2";
 
   -- FIFO --
   signal re_rx_fifo, rd_valid_rx_fifo, empty_rx_fifo  : std_logic;
@@ -102,7 +125,7 @@ architecture RTL of RCAP is
   -- FSMs --
   type RxProcessType is (WaitRxIn, ParseFrame, CheckReplyReq, ReplyProcess, WaitInternalAck, ParseReply);
   type SwitchProcessType is (WaitReq, SendFrame);
-  type TxProcessType is (TxIdle, SetDoneMessange, SetFineOffset, WaitInternalAck, WaitReply, Done);
+  type TxProcessType is (TxIdle, SetDoneMessange, SetFineOffset, SetCNTVALUEOUT, WaitInternalAck, WaitReply, Done);
 
   signal state_rx       : RxProcessType;
   signal state_switch   : SwitchProcessType;
@@ -136,6 +159,25 @@ architecture RTL of RCAP is
   attribute mark_debug  of state_rx                 : signal is enDebug;
   attribute mark_debug  of state_tx                 : signal is enDebug;
 
+    --add 2024/12/12
+  attribute mark_debug  of pulse_takeover           : signal is enDebug;
+  attribute mark_debug  of state_rcap               : signal is enDebug;
+  attribute mark_debug  of req_send_fineoffset      : signal is enDebug;
+  attribute mark_debug  of semi_fine_offset         : signal is enDebug;
+  attribute mark_debug  of dout_rx_fifo             : signal is enDebug;
+  attribute mark_debug  of validBusIn               : signal is enDebug;
+  attribute mark_debug  of state_switch             : signal is enDebug;
+  attribute mark_debug  of got_reply                : signal is enDebug;
+  attribute mark_debug  of cntvalueout_init_rx      : signal is enDebug;
+  attribute mark_debug  of cntvalueout_slaveinit_rx : signal is enDebug;
+  attribute mark_debug  of calibdelay_rx            : signal is enDebug;
+
+  attribute mark_debug  of dT_sec_US : signal is enDebug;
+  attribute mark_debug  of dT_pri_US : signal is enDebug;
+  attribute mark_debug  of is_ultrascale_sec : signal is enDebug;
+  attribute mark_debug  of is_ultrascale_pri : signal is enDebug;
+
+
 
 begin
   -- =================================================================
@@ -149,6 +191,12 @@ begin
 
   idelayTapOut      <= idelay_tap_rx;
   serdesLantencyOut <= serdes_latency_rx;
+
+  cntValueInitOut   <= cntvalueout_init_rx;
+  cntValueSlaveInitOut <= cntvalueout_slaveinit_rx;
+  CalibDelayOut     <= calibdelay_rx;
+
+  roundTripTime     <= reg_round_trip_time;
 
   -- Primary mode ----------------------------------------------------
   gen_prim : if kPrimaryMode = true generate
@@ -197,6 +245,55 @@ begin
     fineOffset        <= accumulated_offset;
     fineOffsetLocal   <= modified_fine_offset;
     validOffset       <= valid_accumulated_offset;
+
+    --Since CalcFineLantency_US is written in Verilog, the library is 'work'
+    u_CalcFineLantency_US_sec : entity work.CalcFineLantency_US
+    generic map
+      (
+        kFastClkFreq    => kFastClkFreq
+      )
+        port map (
+            CLK                 => clk,
+            CNTVALUEOUTInit     => cntValueInitIn,
+            CNTVALUEOUT_slaveInit => cntValueSlaveInitIn,
+            idelay_tap         => idelayTapIn,
+            serdes_latency     => serdesLantencyIn,
+            result             => dT_sec_US,
+            is_ultrascale      => is_ultrascale_sec
+        );
+
+    u_CalcFineLantency_US_pri : entity work.CalcFineLantency_US
+    generic map
+      (
+        kFastClkFreq    => kFastClkFreq
+      )
+        port map (
+            CLK                 => clk,
+            CNTVALUEOUTInit     => cntvalueout_init_rx,
+            CNTVALUEOUT_slaveInit => cntvalueout_slaveinit_rx,
+            idelay_tap         => idelay_tap_rx,
+            serdes_latency     => serdes_latency_rx,
+            result             => dT_pri_US,
+            is_ultrascale      => is_ultrascale_pri
+        );
+
+    u_CalcCalibDelay : entity work.CalcCalibDelay
+    generic map
+    (
+        enCalibDelay          => enCalibDelay,
+        kCalibDelayWidth      => kCalibDelayWidth,
+        kWidthLaccpFineOffset => kWidthLaccpFineOffset,
+        kFastClkFreq          => kFastClkFreq
+    )
+    port map (
+        CLK                   => clk,
+        is_ultrascale_sec     => is_ultrascale_sec,
+        is_ultrascale_pri     => is_ultrascale_pri,
+        CalibDelay            => CalibDelay,
+        calibdelay_rx         => calibdelay_rx,
+        result                => calibdelay_result
+
+    );
 
     u_fine_carry : process(clk)
       variable kPlusCycle          : signed(fineOffset'range):= to_signed(kFullCycle*GetFastClockPeriod(kFastClkFreq), fineOffset'length);
@@ -290,9 +387,19 @@ begin
             pri_idelay_tap  := signed('0' & idelay_tap_rx);
             sec_idelay_tap  := signed('0' & idelayTapIn);
 
-            dT_pri    := CalcFineLantency(pri_idelay_tap, serdes_latency_rx, GetFastClockPeriod(kFastClkFreq));
-            dT_sec    := CalcFineLantency(sec_idelay_tap, serdesLantencyIn,  GetFastClockPeriod(kFastClkFreq));
-            result    := dT_sec - dT_pri;
+            if(is_ultrascale_pri = '1') then
+              dT_pri    := dT_pri_US;
+            else
+              dT_pri    := CalcFineLantency(pri_idelay_tap, serdes_latency_rx, GetFastClockPeriod(kFastClkFreq));
+            end if;
+
+            if(is_ultrascale_sec = '1') then
+              dT_sec := dT_sec_US;
+            else
+              dT_sec    := CalcFineLantency(sec_idelay_tap, serdesLantencyIn,  GetFastClockPeriod(kFastClkFreq));
+            end if;
+
+            result    := dT_sec - dT_pri + resize(calibdelay_result, kWidthLaccpFineOffset);
             reg_fine_offset <= result(result'high) & result(result'high downto 1);
             reg_valid_fineoffset     <= '1';
           end if;
@@ -403,6 +510,14 @@ begin
                 idelay_tap_rx         <= unsigned(rx_register(kWidthTap-1 downto 0));
                 serdes_latency_rx     <= signed(rx_register(kWidthSerdesOffset-1 + kWidthTap downto kWidthTap));
                 upstream_fine_offset  <= signed(rx_register(kWidthLaccpFineOffset-1 +kWidthSerdesOffset + kWidthTap downto kWidthSerdesOffset + kWidthTap));
+                --prioffset_valid       <= '1';
+                state_rx              <= CheckReplyReq;
+              elsif(dout_rx_fifo(kPosDestLocalAddr'range) = kAddrCNTVALUEOUT) then
+                reg_frame_rx          <= dout_rx_fifo;
+                rx_register           := dout_rx_fifo(kPosRegister'range);
+                cntvalueout_init_rx   <= unsigned(rx_register(kCNTVALUEbit-1 + kCNTVALUEbit + kCalibDelayWidth downto kCNTVALUEbit + kCalibDelayWidth));
+                cntvalueout_slaveinit_rx      <= unsigned(rx_register(kCNTVALUEbit-1 + kCalibDelayWidth downto kCalibDelayWidth));
+                calibdelay_rx         <= signed(rx_register(kCalibDelayWidth-1 downto 0));
                 prioffset_valid       <= '1';
                 state_rx              <= CheckReplyReq;
               else
@@ -455,6 +570,22 @@ begin
   --            );
             reg_tx_req(kReply)                            <= '1';
             state_rx                                      <= WaitInternalAck;
+          elsif(reg_frame_rx(kPosDestModAddr'range)   = kAddrRCAP and
+                reg_frame_rx(kPosDestLocalAddr'range) = kAddrCNTVALUEOUT) then
+            reg_frame_tx(kReply)(kPosDestModAddr'range)   <= kAddrRCAP;
+            reg_frame_tx(kReply)(kPosDestLocalAddr'range) <= kAddrCNTVALUEOUT;
+            reg_frame_tx(kReply)(kPosSrcModAddr'range)    <= kAddrRCAP;
+            reg_frame_tx(kReply)(kPosSrcLocalAddr'range)  <= kAddrCNTVALUEOUT;
+            reg_frame_tx(kReply)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                            GenCmdVect(kCmdReply);
+            reg_frame_tx(kReply)(kPosRsv'range)           <= (others => '0');
+            reg_frame_tx(kReply)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kCNTVALUEbit-kCNTVALUEbit-kCalibDelayWidth)) & std_logic_vector(cntValueInitIn) & std_logic_vector(cntValueSlaveInitIn) & std_logic_vector(CalibDelay);
+  --            kWidthTap-1 downto 0 => std_logic_vector(idelayTapIn),
+  --            kWidthSerdesOffset-1 + kWidthTap downto kWidthTap => std_logic_vector(serdesLantencyIn),
+  --            others => '0'
+  --            );
+            reg_tx_req(kReply)                            <= '1';
+            state_rx                                      <= WaitInternalAck;
           end if;
 
         when WaitInternalAck =>
@@ -473,6 +604,13 @@ begin
               rx_register       := reg_frame_rx(kPosRegister'range);
               idelay_tap_rx     <= unsigned(rx_register(kWidthTap-1 downto 0));
               serdes_latency_rx <= signed(rx_register(kWidthSerdesOffset-1 + kWidthTap downto kWidthTap));
+              got_reply(kFineOffset)  <= '1';
+          elsif(reg_frame_rx(kPosSrcModAddr'range)   = kAddrRCAP and
+                reg_frame_rx(kPosSrcLocalAddr'range) = kAddrCNTVALUEOUT) then
+              rx_register       := reg_frame_rx(kPosRegister'range);
+                cntvalueout_init_rx   <= unsigned(rx_register(kCNTVALUEbit-1 + kCNTVALUEbit + kCalibDelayWidth downto kCNTVALUEbit + kCalibDelayWidth));
+                cntvalueout_slaveinit_rx      <= unsigned(rx_register(kCNTVALUEbit-1 + kCalibDelayWidth downto kCalibDelayWidth));
+                calibdelay_rx         <= signed(rx_register(kCalibDelayWidth-1 downto 0));
               got_reply(kFineOffset)  <= '1';
           end if;
           state_rx  <= WaitRxIn;
@@ -531,6 +669,7 @@ begin
         resend_counter      := (others => '1');
         wait_reply          <= (others => '0');
         state_tx            <= TxIdle;
+        req_send_CNTVALUEOUT <= '0';
       else
       case state_tx is
         when TxIdle =>
@@ -538,6 +677,8 @@ begin
             state_tx          <= SetDoneMessange;
           elsif(req_send_fineoffset = '1') then
             state_tx          <= SetFineOffset;
+          elsif(req_send_CNTVALUEOUT = '1') then
+            state_tx          <= SetCNTVALUEOUT;
           end if;
 
         when SetDoneMessange =>
@@ -570,6 +711,24 @@ begin
   --          );
           reg_tx_req(kWrite)                            <= '1';
           wait_reply(kFineOffset)                       <= '1';
+          req_send_CNTVALUEOUT                          <= '1';
+          state_tx                                      <= WaitInternalAck;
+
+        when SetCNTVALUEOUT =>
+          reg_frame_tx(kWrite)(kPosDestModAddr'range)   <= kAddrRCAP;
+          reg_frame_tx(kWrite)(kPosDestLocalAddr'range) <= kAddrCNTVALUEOUT;
+          reg_frame_tx(kWrite)(kPosSrcModAddr'range)    <= kAddrRCAP;
+          reg_frame_tx(kWrite)(kPosSrcLocalAddr'range)  <= kAddrCNTVALUEOUT;
+          reg_frame_tx(kWrite)(kPosCmd'range)           <= GenCmdVect(kCmdDepature) or
+                                                          GenCmdVect(kCmdWrite) or
+                                                          GenCmdVect(kCmdReplyRequest);
+          reg_frame_tx(kWrite)(kPosRsv'range)           <= (others => '0');
+          reg_frame_tx(kWrite)(kPosRegister'range)      <= std_logic_vector(to_unsigned(0, kPosRegister'length-kCNTVALUEbit-kCNTVALUEbit-kCalibDelayWidth)) & std_logic_vector(cntValueInitIn) & std_logic_vector(cntValueSlaveInitIn) & std_logic_vector(CalibDelay);
+
+
+          reg_tx_req(kWrite)                            <= '1';
+          wait_reply(kFineOffset)                       <= '1';
+          req_send_CNTVALUEOUT                          <= '0';
           state_tx                                      <= WaitInternalAck;
 
         when WaitInternalAck =>
@@ -586,7 +745,7 @@ begin
             else
               resend_counter  := std_logic_vector(unsigned(resend_counter) -1);
             end if;
-          else
+          elsif(req_send_CNTVALUEOUT = '1') then
             state_tx  <= TxIdle;
           end if;
 

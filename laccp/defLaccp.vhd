@@ -111,6 +111,7 @@ package defLaccp is
 
   constant kFullCycle   : integer:= 8;
   constant kHalfCycle   : integer:= 4;
+  constant kCalibDelayWidth  : integer:= 12;
   function GetFastClockPeriod(fast_clock_freq : real) return integer;
   function CalcFineLantency(idelay_tap : signed; serdes_latency : signed; fast_clock_period : integer)  return signed;
 

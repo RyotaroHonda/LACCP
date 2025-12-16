@@ -33,7 +33,6 @@ entity PrimaryHeartBeatUnit is
 
       hbfFlagsIn        : in std_logic_vector(kWidthFrameFlag-1 downto 0);
       frameFlags        : out std_logic_vector(kWidthFrameFlag-1 downto 0);
-      clkDiv16          : out std_logic;
 
       -- LACCP Bus --
       dataBusIn         : in LaccpFrameBobyType;
@@ -67,8 +66,6 @@ architecture RTL of PrimaryHeartBeatUnit is
   signal frame_state                        : HbfStateType;
   signal frame_flags                        : std_logic_vector(hbfFlagsIn'range);
 
-  signal clk_div16                          : std_logic;
-
   -- FSMs --
   type TxProcessType is (TxIdle, SetHbfInfo, SetPrimaryReset, SendFrame);
   signal state_tx       : TxProcessType;
@@ -96,28 +93,6 @@ begin
   hbfNumber       <= local_hbf_number;
   frameState      <= frame_state;
   frameFlags      <= frame_flags;
-
-  clkDiv16        <= clk_div16;
-
-  -- Division 16 ---------------------------------------------------------
-
-  u_div16 : process(clk)
-    variable div_counter  : unsigned(3 downto 0):= (others => '0');
-  begin
-    if(clk'event and clk = '1') then
-      if(sync_reset = '1' or heartbeat_signal = '1') then
-        div_counter   := (others => '0');
-      else
-        div_counter   := div_counter +1;
-      end if;
-
-      if(div_counter(div_counter'left) = '1') then
-        clk_div16   <= '0';
-      else
-        clk_div16   <= '1';
-      end if;
-    end if;
-  end process;
 
   -- HeartBeat -----------------------------------------------------------
   u_counter : process(clk)
@@ -223,7 +198,8 @@ begin
                                                   GenCmdVect(kCmdDepature) or
                                                   GenCmdVect(kCmdWrite);
           reg_frame_tx(kPosRsv'range)           <= (others => '0');
-          reg_frame_tx(kPosRegister'range)      <= EncodeHbfState(frame_state) & "00" & frame_flags & local_hbf_number;
+          --reg_frame_tx(kPosRegister'range)      <= EncodeHbfState(frame_state) & frame_flags & local_hbf_number;
+          reg_frame_tx(kPosRegister'range)      <= "00" & EncodeHbfState(frame_state) & frame_flags & local_hbf_number;
           state_tx                              <= SendFrame;
 
         when SetPrimaryReset =>

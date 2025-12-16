@@ -1,1 +1,2 @@
+- 2025/12/16 (v2.0) Applicable devices have been expanded to AMD Xilinx UltraScale/UltraScale+ FPGAs.
 - 2024/12/04 (v1.0) De-fact first version
