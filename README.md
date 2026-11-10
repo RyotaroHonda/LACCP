@@ -8,11 +8,11 @@ User guide is under preparation.
 
 ## Test condition
 
-Currently, the LACCP supports AMD 7-series FPGAs.
+Currently, the LACCP supports AMD 7-series and UltraScale FPGAs.
 
 ## Installation
 
-Tested with Vivado 2023.1.1 or before. Please add sources to your Vivado project or use gitsubmodule.
+Tested with Vivado 2025.2 or before. Please add sources to your Vivado project or use gitsubmodule.
 
 ### VHDL-2008
 
